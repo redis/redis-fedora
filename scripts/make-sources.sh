@@ -1,22 +1,17 @@
 #!/bin/bash
-# make-sources.sh -- regenerate every generated Source for redis.spec.
+# make-sources.sh -- regenerate the two vendored-crate Sources for redis.spec.
 #
-# Three of the Sources cannot be downloaded from a URL, because they do not
-# exist as upstream release artefacts:
+#   Source1  redisjson-vendor-<ver>.tar.gz   `cargo vendor` of RedisJSON
+#   Source2  redisearch-vendor-<ver>.tar.gz  `cargo vendor` of RediSearch
 #
-#   Source0  redis-<ver>-full.tar.gz        upstream `make tarball`: Redis core
-#                                           plus every module at the ref pinned
-#                                           in modules/modules.yaml
-#   Source1  redisjson-vendor-<ver>.tar.gz  `cargo vendor` of RedisJSON
-#   Source2  redisearch-vendor-<ver>.tar.gz `cargo vendor` of RediSearch
+# The build has no network access, so the crates ship inside the SRPM. They
+# are vendored from the module sources in upstream's release tarball
+# (Source0), which this script downloads if it is not already present.
 #
-# All three need network access, so they are produced here and shipped inside
-# the SRPM -- the buildroot itself is offline.
+# Sources 3-8 (RediSearch's CMake FetchContent deps) are fetched with spectool
+# by the Makefile's `download` target.
 #
-# Sources 3-8 (RediSearch's CMake FetchContent deps) DO have upstream URLs and
-# are fetched with spectool by the Makefile's `download` target.
-#
-# Usage:  scripts/make-sources.sh [<redis-tag>]
+# Usage:  scripts/make-sources.sh [<redis-version>]
 #         defaults to the Version: in redis.spec
 
 set -euo pipefail
@@ -37,22 +32,18 @@ echo "==> output          : $OUTDIR"
 mkdir -p "$OUTDIR" "$WORK"
 
 # ---------------------------------------------------------------------------
-# Source0 -- Redis core + all modules, via upstream's own tarball target.
+# Source0 -- upstream's release tarball: Redis plus each module at the ref
+# pinned in modules/modules.yaml. The crates are vendored from this exact
+# tree, so they cannot drift from what the build compiles.
 # ---------------------------------------------------------------------------
-CLONE="$WORK/redis"
-if [ ! -d "$CLONE/.git" ]; then
-    echo "==> cloning redis/redis"
-    git clone --quiet https://github.com/redis/redis "$CLONE"
+TARBALL="$OUTDIR/redis-$TAG.tar.gz"
+if [ ! -f "$TARBALL" ]; then
+    echo "==> downloading redis-$TAG.tar.gz"
+    curl -fsSL -o "$TARBALL" "https://download.redis.io/releases/redis-$TAG.tar.gz"
 fi
-git -C "$CLONE" fetch --quiet --tags origin
-git -C "$CLONE" checkout --quiet "$TAG"
-
-echo "==> make modules-update (clones each module at its modules.yaml ref)"
-( cd "$CLONE" && MODULES_UPDATE_SHALLOW=1 make modules-update all >/dev/null )
-
-echo "==> make tarball"
-( cd "$CLONE" && TARBALL_SKIP_MODULES_UPDATE=1 make tarball \
-      TAG="$TAG" OUT_PATH="$OUTDIR/redis-$TAG-full.tar.gz" >/dev/null )
+CLONE="$WORK/redis-$TAG"
+rm -rf "$CLONE"
+tar xzf "$TARBALL" -C "$WORK"
 
 # ---------------------------------------------------------------------------
 # Source1 -- RedisJSON vendored crates.
@@ -107,6 +98,5 @@ PYEOF
 
 echo
 echo "==> generated:"
-ls -lh "$OUTDIR/redis-$TAG-full.tar.gz" \
-       "$OUTDIR/redisjson-vendor-$JSON_VER.tar.gz" \
+ls -lh "$OUTDIR/redisjson-vendor-$JSON_VER.tar.gz" \
        "$OUTDIR/redisearch-vendor-$SEARCH_VER.tar.gz" | awk '{print "    " $5 "  " $9}'

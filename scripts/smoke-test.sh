@@ -5,7 +5,7 @@
 # This deliberately tests both supported install shapes, because "the RPM
 # built" and "the module loads" are different claims:
 #
-#   redis-server  plain server. Only vector sets (compiled into the binary).
+#   redis-core    plain server. Only vector sets (compiled into the binary).
 #                 Every module command must be REJECTED -- that is what proves
 #                 a plain install really is plain.
 #   redis         the server plus all four modules, all commands working.
@@ -94,7 +94,7 @@ dir /tmp
 # Some CI hosts trip Redis's ARM64 copy-on-write check; it is unrelated to
 # packaging and would otherwise abort startup.
 ignore-warnings ARM64-COW-BUG
-include /etc/redis/modules/*.conf
+include /etc/redis/modules.conf.d/*.conf
 EOF
     mkdir -p "$LOGDIR"
     LOG="$LOGDIR/$(basename "$root").log"
@@ -141,9 +141,9 @@ start_shipped() {
 
 # ---------------------------------------------------------------------------
 echo
-echo "=== 1/2  dnf install redis-server  (plain server) ==="
+echo "=== 1/2  dnf install redis-core  (plain server) ==="
 ROOT="$ROOT_BASE/plain"
-install_root redis-server "$ROOT" || { echo "install failed"; exit 1; }
+install_root redis-core "$ROOT" || { echo "install failed"; exit 1; }
 echo "  installed: $(sudo rpm --root="$ROOT" -qa 2>/dev/null | grep -cE '^redis') redis package(s)"
 sudo rpm --root="$ROOT" -qa 2>/dev/null | grep -E '^redis' | sort | sed 's/^/    /'
 if start_server "$ROOT"; then
@@ -187,19 +187,26 @@ sudo rm -rf "$ROOT"
 echo
 echo "=== 3/3  the packaged /etc/redis/redis.conf actually works ==="
 ROOT="$ROOT_BASE/shipped"
-install_root redis-server "$ROOT" || { echo "install failed"; exit 1; }
+install_root redis-core "$ROOT" || { echo "install failed"; exit 1; }
 
 # Static check: the daemon runs as redis and must be able to create its log.
-logdir_owner=$(sudo stat -c '%U' "$ROOT/var/log/redis" 2>/dev/null)
-if [ "$logdir_owner" = "redis" ]; then
-    ok "/var/log/redis writable by the redis user (owner: $logdir_owner)"
+# Compare numeric uids against the install root's own passwd: `stat -c %U`
+# would resolve the uid through the host's passwd, where the same number can
+# belong to a different user.
+logdir_uid=$(sudo stat -c '%u' "$ROOT/var/log/redis" 2>/dev/null)
+redis_uid=$(sudo awk -F: '$1=="redis"{print $3}' "$ROOT/etc/passwd" 2>/dev/null)
+if [ -n "$redis_uid" ] && [ "$logdir_uid" = "$redis_uid" ]; then
+    ok "/var/log/redis writable by the redis user (uid $logdir_uid)"
 else
-    bad "/var/log/redis owned by '$logdir_owner', not redis -- the daemon cannot create its log file"
+    bad "/var/log/redis owned by uid '$logdir_uid', redis is uid '$redis_uid' -- the daemon cannot create its log file"
 fi
 
 # No loadmodule line may survive in the packaged config: redis-server aborts
 # if any of them points at a path that is not installed.
-stray=$(sudo grep -c '^loadmodule' "$ROOT/etc/redis/redis.conf" 2>/dev/null || echo 0)
+# grep -c prints 0 *and* exits 1 when nothing matches, so `|| echo 0` would
+# yield "0<newline>0" and fail the comparison below.
+stray=$(sudo grep -c '^loadmodule' "$ROOT/etc/redis/redis.conf" 2>/dev/null) || true
+stray=${stray:-0}
 if [ "$stray" = "0" ]; then
     ok "no stray loadmodule lines in the packaged redis.conf"
 else

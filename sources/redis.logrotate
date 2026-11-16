@@ -1,4 +1,5 @@
 /var/log/redis/*.log {
+    su redis redis
     weekly
     rotate 10
     copytruncate

@@ -16,24 +16,26 @@ Verify with `make check-tools`.
 `redis.spec` has fourteen Sources. They come from three different places, and
 the distinction matters:
 
-### Source0-2 — generated, not downloadable
+### Source0 — upstream's release tarball
+
+`https://download.redis.io/releases/redis-<ver>.tar.gz`. It already contains
+every module at its `modules.yaml` ref, so nothing has to be assembled.
+
+### Source1-2 — generated, not downloadable
 
 These do not exist as upstream release artefacts. `scripts/make-sources.sh`
-produces them:
+produces them from the module sources inside Source0:
 
 | Source | Produced by |
 |---|---|
-| `redis-<ver>-full.tar.gz` | upstream's `make tarball TAG=<ver>` — Redis core plus every module at its `modules.yaml` ref |
 | `redisjson-vendor-<ver>.tar.gz` | `cargo vendor` of the RedisJSON workspace |
 | `redisearch-vendor-<ver>.tar.gz` | `cargo vendor` of the RediSearch Rust workspace |
 
-`make tarball` is upstream tooling: it clones each module at its pinned ref
-and emits a reproducible archive (sorted, owner 0, mtimes from the tag
-commit). All three need **network access**, which is why they are generated
+`cargo vendor` needs **network access**, which is why they are generated
 ahead of time and shipped inside the SRPM — the buildroot is offline.
 
 ```bash
-make sources    # regenerates all three
+make sources    # regenerates both
 ```
 
 ### Source3-8 — RediSearch's CMake FetchContent dependencies
@@ -71,8 +73,8 @@ they are not rediscovered.
 ## 1. `common.mk` re-clones modules
 
 `modules/common.mk`'s `get_source` target treats a missing `src/.git` as "not
-cloned yet" and clones over the network. But `make tarball` deliberately
-strips each module's `.git`.
+cloned yet" and clones over the network. But the release tarball has no
+`.git` in the module directories.
 
 **Fix** — `%prep` touches the marker file the target checks:
 

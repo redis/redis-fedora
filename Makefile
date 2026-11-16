@@ -1,6 +1,6 @@
 # Redis RPM packaging -- reproducible build and test.
 #
-#   make sources   regenerate the three generated tarballs (needs network)
+#   make sources   regenerate the vendored crate tarballs (needs network)
 #   make download  fetch the six RediSearch FetchContent deps
 #   make srpm      build the source RPM
 #   make mock      build binary RPMs locally in a clean chroot
@@ -16,7 +16,8 @@ SPEC        := $(NAME).spec
 VERSION     := $(shell awk '/^Version:/{print $$2; exit}' $(SPEC))
 RELEASE     := $(shell awk '/^Release:/{print $$2; exit}' $(SPEC) | sed 's/%{?dist}//')
 ARCH        := $(shell uname -m)
-DIST        ?= fc43
+# The SRPM is named after the build host's dist tag, not the mock chroot's.
+DIST        ?= $(shell rpm --eval '%{?dist}' | sed 's/^\.//')
 MOCK_CFG    ?= fedora-43-$(ARCH)
 COPR_PROJECT?= @redis/redis
 
@@ -36,7 +37,7 @@ help:
 	  | sed -E 's/^## (.*)/@@\1/' \
 	  | awk -F: '/^@@/{d=substr($$0,3)} /^[a-z]/{printf "  \033[1m%-14s\033[0m %s\n", $$1, d}'
 	@echo
-	@echo "Variables: MOCK_CFG=$(MOCK_CFG)  COPR_PROJECT=$(COPR_PROJECT)"
+	@echo "Variables: MOCK_CFG=$(MOCK_CFG)  COPR_PROJECT=$(COPR_PROJECT)  COPR_RELEASE=<n>"
 
 ## Verify the tools this Makefile needs are installed
 check-tools:
@@ -51,14 +52,14 @@ check-tools:
 	fi; \
 	echo "All required tools present."
 
-## Regenerate the generated tarballs: redis+modules, and both cargo vendors
+## Regenerate the two vendored crate tarballs (downloads Source0 if needed)
 sources:
 	@scripts/make-sources.sh $(VERSION)
 
 ## Fetch the RediSearch FetchContent dependencies (Source3-Source8)
 download:
 	@cp -f sources/* $(SOURCEDIR)/
-	@spectool -g -S $(SPEC) --define "_sourcedir $(SOURCEDIR)" 2>/dev/null \
+	@spectool -g -S -R $(SPEC) --define "_sourcedir $(SOURCEDIR)" 2>/dev/null \
 	  | grep -E "Downloading|already exists" || true
 
 ## Build the source RPM
@@ -72,9 +73,18 @@ mock: srpm
 	@sg mock -c "mock -r $(MOCK_CFG) --resultdir=$(MOCK_RESULT) $(SRPM)"
 	@ls -1 $(MOCK_RESULT)/*.rpm | grep -v src.rpm
 
-## Submit the SRPM to Copr (builds all configured chroots)
+## Submit the SRPM to Copr (builds all configured chroots).
+## COPR_RELEASE=N submits with Release N while the spec keeps its own. Copr
+## users only receive a build whose release is higher than the one installed.
 copr: srpm
-	@copr-cli build $(COPR_PROJECT) $(SRPM)
+	@if [ -n "$(COPR_RELEASE)" ]; then \
+	  mkdir -p $(SRPMDIR)/copr-spec && \
+	  sed 's/^Release:.*/Release:           $(COPR_RELEASE)%{?dist}/' $(SPEC) \
+	      > $(SRPMDIR)/copr-spec/$(NAME).spec && \
+	  rpmbuild -bs $(SRPMDIR)/copr-spec/$(NAME).spec >/dev/null && \
+	  srpm=$(SRPMDIR)/$(NAME)-$(VERSION)-$(COPR_RELEASE).$(DIST).src.rpm; \
+	else srpm=$(SRPM); fi && \
+	echo "Submitting $$srpm" && copr-cli build $(COPR_PROJECT) $$srpm
 
 ## Install from Copr and run the full module test suite
 smoke:

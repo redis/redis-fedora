@@ -5,12 +5,12 @@ source, and ships two things you can install:
 
 | Package | What you get |
 |---|---|
-| `redis-server` | Plain server: `redis-server`, `redis-cli`, `redis-sentinel`. Vector sets included (compiled into the binary). No modules. |
+| `redis-core` | Plain server: `redis-server`, `redis-cli`, `redis-sentinel`. Vector sets included (compiled into the binary). No modules. |
 | `redis` | The same server plus **RediSearch, RedisJSON, RedisBloom and RedisTimeSeries**, active on restart. |
 
 ```bash
 sudo dnf copr enable @redis/redis
-sudo dnf install redis-server   # plain
+sudo dnf install redis-core     # plain
 # or
 sudo dnf install redis          # everything
 sudo systemctl enable --now redis
@@ -53,7 +53,7 @@ Makefile                reproducible build + test entry points
 sources/                static sources: systemd units, sysusers,
                         logrotate, the redis.conf patch, rpmlintrc
 scripts/
-  make-sources.sh       regenerates the three generated tarballs
+  make-sources.sh       regenerates the two vendored crate tarballs
   smoke-test.sh         installs into a throwaway root and asserts behaviour
 docs/
   DESIGN.md             why one SRPM with subpackages; what was rejected

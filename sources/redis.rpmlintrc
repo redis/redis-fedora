@@ -4,10 +4,10 @@
 # each carries its reason. Anything not listed here should be treated as a real
 # problem to fix, not silenced.
 
-# --- Source0-2 are generated, not fetched ---------------------------------
-# They do not exist as upstream release artefacts: Source0 comes from Redis's
-# own `make tarball`, Source1/2 from `cargo vendor`. See scripts/make-sources.sh.
-addFilter(r"invalid-url Source[012]:")
+# --- Source1-2 are generated, not fetched ---------------------------------
+# The vendored Rust crates have no upstream URL: they come from `cargo vendor`.
+# See scripts/make-sources.sh.
+addFilter(r"invalid-url Source[12]:")
 
 # --- Copr's signing key is not in the local keyring -----------------------
 # Environmental: appears when linting RPMs downloaded from Copr, not a defect.
@@ -47,11 +47,11 @@ addFilter(r"redis-devel.*(no-documentation|only-non-binary-in-usr-lib)")
 
 # --- the redis package ships modules, not documentation -------------------
 # It contains only the module .so files, their loadmodule stubs and licences;
-# the server's docs are in redis-server.
+# the server's docs are in redis-core.
 addFilter(r"^redis\.[a-z0-9_]+: W: no-documentation")
 
 # --- logrotate file name ---------------------------------------------------
-# /etc/logrotate.d/redis lives in redis-server but is named for the service
+# /etc/logrotate.d/redis lives in redis-core but is named for the service
 # and its log directory (/var/log/redis), both still "redis". Renaming it to
 # match the subpackage would orphan admin edits to a %config(noreplace) file
 # on upgrade, for no functional gain.
@@ -62,3 +62,9 @@ addFilter(r"incoherent-logrotate-file /etc/logrotate.d/redis")
 # upstream rather than something the spec can address; recorded here so it is
 # not mistaken for a packaging fault.
 addFilter(r"crypto-policy-non-compliance-openssl")
+
+# --- duplicate files in the generated debugsource package ------------------
+# redis-debugsource is produced by rpm, not by the spec. The duplicates are
+# sources that several bundled modules each carry their own copy of (hiredis, cpu_features
+# and RedisModulesSDK), so there is nothing in the file list to deduplicate.
+addFilter(r"redis-debugsource.*files-duplicated-waste")

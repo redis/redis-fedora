@@ -33,7 +33,7 @@ if any assertion fails.
 
 ## What it asserts
 
-### 1. `dnf install redis-server` — plain server
+### 1. `dnf install redis-core` — plain server
 
 | Check | Expected |
 |---|---|
@@ -78,7 +78,7 @@ the package was installed on a live machine and started via systemd:
 
 - `redis.conf` shipped an auto-managed `loadmodule` block with
   development-tree paths (`./modules/<name>/<lib>.so`), written by upstream's
-  `make modules-update` and captured by `make tarball`. Redis **aborts** when
+  `make modules-update` and shipped in the release tarball. Redis **aborts** when
   a `loadmodule` target is missing, so a plain server would not start at all.
 - `/var/log/redis` was `root:redis 0750`, leaving the `redis` user without a
   write bit, so the daemon could not create its own log file.
@@ -126,5 +126,5 @@ make lint
 
 Runs `rpmlint` against the spec and any built RPMs, using
 `sources/redis.rpmlintrc`. That file filters exactly two things, both
-justified in comments: the missing-URL warning for the three generated
-tarballs, and `no-documentation` where it does not apply.
+justified in comments: the missing-URL warning for the two generated
+crate tarballs, and `no-documentation` where it does not apply.

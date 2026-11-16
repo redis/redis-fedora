@@ -1,6 +1,6 @@
 # Maintenance: bumping to a new Redis release
 
-A version bump is **not** just editing `Version:`. Three of the Sources are
+A version bump is **not** just editing `Version:`. Two of the Sources are
 generated and must be regenerated, and one upstream pin has to be re-checked
 by hand.
 
@@ -65,7 +65,7 @@ before `redis` took that role.
 ### 4. Regenerate sources and build
 
 ```bash
-make sources     # needs network: make tarball + both cargo vendors
+make sources     # needs network: Source0 download + both cargo vendors
 make download    # FetchContent deps
 make srpm
 make copr        # or `make mock` for a local check first

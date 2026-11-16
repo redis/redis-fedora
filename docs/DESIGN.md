@@ -69,9 +69,9 @@ server or a server with everything — not to hand-pick modules.
 
 ```
 redis.spec
-  |-- redis-server   server, cli, sentinel, vector sets
+  |-- redis-core     server, cli, sentinel, vector sets
   |-- redis-devel    redismodule.h + RPM macros
-  `-- redis          the modules + their loadmodule stubs; requires redis-server
+  `-- redis          the modules + their loadmodule stubs; requires redis-core
 ```
 
 `redis` carries `Obsoletes:` for the short-lived per-module packages
@@ -83,28 +83,30 @@ redis.spec
 
 `dnf install redis` gives the behaviour most people expect from "install
 Redis" — a working server with the modules upstream ships. Someone who wants
-a bare server asks for `redis-server` explicitly. Before 8.10.1-8 this was
-reversed: `redis` was plain and `redis-full` added modules.
+a bare server asks for `redis-core` explicitly. Before 8.10.1-8 this was
+reversed: `redis` was plain and `redis-full` added modules. The plain
+package was called `redis-server` in Copr builds up to 8.10.3-1; `redis-core` is the name
+agreed across distributions.
 
 ## How modules activate
 
 `redis-conf.patch` adds one line to `redis.conf`:
 
 ```
-include /etc/redis/modules/*.conf
+include /etc/redis/modules.conf.d/*.conf
 ```
 
 `redis` drops a stub per module into that directory:
 
 ```
-/etc/redis/modules/redisbloom.conf   -> loadmodule /usr/lib64/redis/modules/redisbloom.so
-/etc/redis/modules/search.conf       -> loadmodule /usr/lib64/redis/modules/redisearch.so
-/etc/redis/modules/redisjson.conf    -> loadmodule /usr/lib64/redis/modules/rejson.so
-/etc/redis/modules/timeseries.conf   -> loadmodule /usr/lib64/redis/modules/redistimeseries.so
+/etc/redis/modules.conf.d/redisbloom.conf   -> loadmodule /usr/lib64/redis/modules/redisbloom.so
+/etc/redis/modules.conf.d/search.conf       -> loadmodule /usr/lib64/redis/modules/redisearch.so
+/etc/redis/modules.conf.d/redisjson.conf    -> loadmodule /usr/lib64/redis/modules/rejson.so
+/etc/redis/modules.conf.d/timeseries.conf   -> loadmodule /usr/lib64/redis/modules/redistimeseries.so
 ```
 
 So installing the package is what enables the modules — no config editing.
-A plain `redis-server` install leaves that directory empty and the glob
+A plain `redis-core` install leaves that directory empty and the glob
 matches nothing, which Redis handles fine (verified).
 
 ## Vector sets are not a module
@@ -112,7 +114,7 @@ matches nothing, which Redis handles fine (verified).
 Upstream compiles them into the server binary — `src/Makefile` builds
 `hnsw.o`, `vset.o` and `vset_config.o` under `-DINCLUDE_VEC_SETS=1`. They
 appear in `MODULE LIST` as `vectorset` with no package providing them, and
-`VADD`/`VSIM` work on a plain `redis-server` install. Nothing to package.
+`VADD`/`VSIM` work on a plain `redis-core` install. Nothing to package.
 
 ## The cost of this design
 

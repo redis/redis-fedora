@@ -7,7 +7,7 @@ index 30a3d8b57..edfd8bdb6 100644
  # include /path/to/fragments/*.conf
  #
 +# Module configuration files
-+include /etc/redis/modules/*.conf
++include /etc/redis/modules.conf.d/*.conf
  
  ################################## MODULES #####################################
  

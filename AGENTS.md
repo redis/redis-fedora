@@ -11,7 +11,7 @@ from a single source, producing three packages:
 
 | Package | Contents |
 |---|---|
-| `redis-server` | plain server; vector sets compiled in; **no modules** |
+| `redis-core` | plain server; vector sets compiled in; **no modules** |
 | `redis-devel` | `redismodule.h` + RPM macros |
 | `redis` | the server plus all four modules (RediSearch, RedisJSON, RedisBloom, RedisTimeSeries) |
 
@@ -52,10 +52,10 @@ make lint
 
 ### 1. Editing `Version:` is not a version bump
 
-Three Sources are **generated**, not downloadable: the combined
-redis+modules tarball (`make tarball`) and two `cargo vendor` trees. They must
-be regenerated with `make sources` for every version. Follow
-`docs/MAINTENANCE.md`.
+Two Sources are **generated**, not downloadable: the `cargo vendor` trees for
+RedisJSON and RediSearch. They must be regenerated with `make sources` for
+every version. Source0 is upstream's release tarball, which already contains
+the modules. Follow `docs/MAINTENANCE.md`.
 
 Also: module versions come from upstream's `modules/modules.yaml`, not from
 you, and they do **not** all match the core tag.
@@ -98,12 +98,12 @@ stale pin fails at configure time after most of the build has already run.
 ### 6. Module sources re-clone themselves unless stopped
 
 `modules/common.mk` clones a module over the network if `src/.git` is missing,
-and `make tarball` strips `.git`. `%prep` touches `src/.prepared` to prevent
-it. Removing those `touch` lines breaks the offline build.
+and the release tarball has no `.git`. `%prep` touches `src/.prepared` to
+prevent it. Removing those `touch` lines breaks the offline build.
 
 ### 7. Do not declare `%dir` for redis-owned directories
 
-`redis-server` owns `/etc/redis/modules` (`0750 redis:root`) and
+`redis-core` owns `/etc/redis/modules.conf.d` (`0750 redis:root`) and
 `/usr/lib64/redis/modules`. A subpackage re-declaring them with different
 permissions produces a **file conflict that blocks installation**. The `redis`
 package places files into them and owns no directories.
@@ -137,7 +137,7 @@ disables it for the same reason. Do not remove it for a performance win.
 
 ### 12. Vector sets are not a module
 
-Upstream compiles them into `redis-server` (`-DINCLUDE_VEC_SETS=1`). They show
+Upstream compiles them into the server (`-DINCLUDE_VEC_SETS=1`). They show
 up in `MODULE LIST` as `vectorset` with no package providing them. Nothing to
 package; do not try.
 
@@ -152,7 +152,7 @@ make copr          # then check ALL chroots, not just overall status
 make smoke         # runtime assertions
 ```
 
-`make smoke` asserts that a plain `redis-server` install **rejects** `JSON.SET`,
+`make smoke` asserts that a plain `redis-core` install **rejects** `JSON.SET`,
 `BF.ADD`, `TS.ADD` and `FT.CREATE`. Those rejections are the test passing, not
 failing — they prove nothing leaked in through a weak dependency. That bug was
 real: old per-module RPMs carried `Supplements: redis`, so `dnf install redis`
