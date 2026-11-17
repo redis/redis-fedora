@@ -11,10 +11,9 @@ from a single source, producing these packages:
 
 | Package | Contents |
 |---|---|
-| `redis-core` | plain server; vector sets compiled in; **no modules** |
+| `redis` | the server; vector sets compiled in; recommends the four module packages |
 | `redis-devel` | `redismodule.h` + RPM macros |
 | `redisbloom`, `redisearch`, `redisjson`, `redistimeseries` | one module each: the `.so` and its `loadmodule` stub |
-| `redis` | no files; requires `redis-core` and the four module packages |
 
 It replaced five separate packaging repos. The modules are subpackages of
 this one spec. Do not move them back into separate source packages without
@@ -106,7 +105,7 @@ hand-rolled snapshot) lacks the marker and breaks the offline build.
 
 ### 7. Do not declare `%dir` for redis-owned directories
 
-`redis-core` owns `/etc/redis/modules.conf.d` (`0750 redis:root`) and
+`redis` owns `/etc/redis/modules.conf.d` (`0750 redis:root`) and
 `/usr/lib64/redis/modules`. A subpackage re-declaring them with different
 permissions produces a **file conflict that blocks installation**. The module
 packages place files into them and own no directories.
@@ -155,14 +154,19 @@ make copr          # then check ALL chroots, not just overall status
 make smoke         # runtime assertions
 ```
 
-`make smoke` asserts that a plain `redis-core` install **rejects** `JSON.SET`,
-`BF.ADD`, `TS.ADD` and `FT.CREATE`. Those rejections are the test passing, not
-failing — they prove nothing leaked in through a weak dependency. That bug was
-real: old per-module RPMs carried `Supplements: redis`, back when `redis` was
-the plain server, so installing it silently pulled in four unwanted packages.
-Never add `Supplements:` or `Recommends:` on `redis-core` to a module package.
+The modules are weak dependencies: `redis` has `Recommends:` on each module
+package, the same shape as `valkey` and `valkey-rdma` in Fedora. A default
+`dnf install redis` therefore installs all four. Do not turn them into
+`Requires:`; a module must stay removable.
 
-It also installs `redisjson` on its own and asserts that only RedisJSON loads.
+`make smoke` installs `redis` with `--setopt=install_weak_deps=False` and
+asserts that this plain server **rejects** `JSON.SET`, `BF.ADD`, `TS.ADD` and
+`FT.CREATE`. Those rejections are the test passing, not failing. It then
+installs `redis` normally and asserts that all four modules work.
+
+It also installs `redisjson` with weak dependencies off and asserts that only
+RedisJSON loads. Without the option dnf installs the other modules too,
+because the `redis` package that `redisjson` requires recommends them.
 
 ## Reporting
 

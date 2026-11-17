@@ -38,22 +38,9 @@ addFilter(r"no-manual-page-for-binary redis-")
 addFilter(r"redis-devel.*(no-documentation|only-non-binary-in-usr-lib)")
 
 # --- the module packages ship no documentation -----------------------------
-# Each contains one module .so, its loadmodule stub and licences. redis itself
-# has no files at all. The server's docs are in redis-core.
-addFilter(r"^(redis|redisbloom|redisearch|redisjson|redistimeseries)\.[a-z0-9_]+: W: no-documentation")
-
-# --- redis has no files -----------------------------------------------------
-# It only requires redis-core and the four module packages. It cannot be
-# noarch: a noarch main package would make every subpackage noarch, and its
-# Requires are architecture-specific.
-addFilter(r"^redis\.[a-z0-9_]+: E: no-binary")
-
-# --- logrotate file name ---------------------------------------------------
-# /etc/logrotate.d/redis lives in redis-core but is named for the service
-# and its log directory (/var/log/redis), both still "redis". Renaming it to
-# match the subpackage would orphan admin edits to a %config(noreplace) file
-# on upgrade, for no functional gain.
-addFilter(r"incoherent-logrotate-file /etc/logrotate.d/redis")
+# Each contains one module .so, its loadmodule stub and licences. The docs
+# are in redis.
+addFilter(r"^(redisbloom|redisearch|redisjson|redistimeseries)\.[a-z0-9_]+: W: no-documentation")
 
 # --- OpenSSL cipher-list use is upstream C code ---------------------------
 # redis calls SSL_CTX_set_cipher_list directly. Real, but a code issue for

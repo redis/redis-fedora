@@ -24,8 +24,7 @@ Read the `ref:` for each module. They do **not** all match the core tag — for
 dependencies inside its own tree, and they move between releases:
 
 ```bash
-git clone https://github.com/RediSearch/RediSearch && cd RediSearch
-git checkout v<search_ver>
+tar xzf redis-<newtag>.tar.gz && cd redis-<newtag>/modules/redisearch/src
 grep -rn "GIT_TAG" deps/VectorSimilarity/deps/ScalableVectorSearch/cmake/ \
                    deps/VectorSimilarity/cmake/
 ```
@@ -46,20 +45,11 @@ through most of the build.
 Version:        <newtag>
 Release:        1%{?dist}
 
-%global bloom_ver      <from modules.yaml>
-%global search_ver     <from modules.yaml>
-%global json_ver       <from modules.yaml>
-%global timeseries_ver <from modules.yaml>
-
 %global fmt_ver ...    <from step 2, if changed>
 ```
 
 Add a `%changelog` entry. Do not write bare `%{version}` in changelog text —
 rpmlint flags `macro-in-%changelog`; escape as `%%{version}`.
-
-Leave the `Obsoletes: redis-full < 8.10.1-8` bound on the `redis` package
-alone; it only matters for upgrades from the name that package had before
-`redis` took that role.
 
 Update the `License:` tags of `redisjson` and `redisearch` from the two
 `LICENSE SUMMARY` blocks that `%cargo_license_summary` prints in the build
@@ -126,7 +116,6 @@ workspaces. The clone is cached in `~/.cache/redis-sources` and reused. Use
 
 ## Release checklist
 
-- [ ] `modules.yaml` refs read from the new tag, `%global *_ver` updated
 - [ ] RediSearch FetchContent pins re-checked (especially `fmt`)
 - [ ] `Version:` bumped, `Release:` reset to 1
 - [ ] `%changelog` entry added, macros escaped

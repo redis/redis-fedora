@@ -28,8 +28,8 @@ produces them from the module sources inside Source0:
 
 | Source | Produced by |
 |---|---|
-| `redisjson-vendor-<ver>.tar.gz` | `cargo vendor` of the RedisJSON workspace |
-| `redisearch-vendor-<ver>.tar.gz` | `cargo vendor` of the RediSearch Rust workspace |
+| `redisjson-vendor-<redis version>.tar.gz` | `cargo vendor` of the RedisJSON workspace |
+| `redisearch-vendor-<redis version>.tar.gz` | `cargo vendor` of the RediSearch Rust workspace |
 
 `cargo vendor` needs **network access**, which is why they are generated
 ahead of time and shipped inside the SRPM — the buildroot is offline.

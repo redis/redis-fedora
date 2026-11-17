@@ -22,12 +22,12 @@ OUTDIR="${OUTDIR:-$(rpm --eval %{_sourcedir})}"
 WORK="${WORK:-$HOME/.cache/redis-sources}"
 
 TAG="${1:-$(awk '/^Version:/{print $2; exit}' "$SPEC")}"
-JSON_VER=$(awk '/^%global json_ver/{print $3; exit}' "$SPEC")
-SEARCH_VER=$(awk '/^%global search_ver/{print $3; exit}' "$SPEC")
+# The vendor tarballs are named after the Redis version: the crates come from
+# the module sources inside that release tarball.
+JSON_VER="$TAG"
+SEARCH_VER="$TAG"
 
 echo "==> redis tag       : $TAG"
-echo "==> redisjson ver   : $JSON_VER"
-echo "==> redisearch ver  : $SEARCH_VER"
 echo "==> output          : $OUTDIR"
 mkdir -p "$OUTDIR" "$WORK"
 

@@ -20,7 +20,7 @@ Directly, with more control:
 
 ```bash
 scripts/smoke-test.sh copr fedora-43-x86_64
-scripts/smoke-test.sh local ~/mock-results/redis-8.10.1-4
+scripts/smoke-test.sh local ~/mock-results/redis-8.10.3-1
 ```
 
 It installs into a throwaway root under `~/.cache/redis-smoke`, starts
@@ -33,7 +33,10 @@ if any assertion fails.
 
 ## What it asserts
 
-### 1. `dnf install redis-core` — plain server
+### 1. `dnf install redis` with weak dependencies off — plain server
+
+The test installs with `--setopt=install_weak_deps=False` and first asserts
+that none of the four module packages was installed.
 
 | Check | Expected |
 |---|---|
@@ -45,18 +48,13 @@ if any assertion fails.
 | `FT.CREATE` | **`unknown command`** |
 
 The four "unknown command" results are the point, not a failure. They are
-what proves a plain install really is plain — that no module leaked in via a
-weak dependency and no stale `loadmodule` stub is lying around.
-
-This matters because it has been wrong before: while old per-module packages
-were still published, they carried `Supplements: redis`, so `dnf install redis`
-silently dragged in four unwanted module packages. Only a runtime check
-catches that.
+what proves a plain install really is plain: no module is compiled in and no
+stale `loadmodule` stub is lying around.
 
 ### 2. `dnf install redis` — server with every module
 
-`redis` has no files, so the test first asserts that it pulled in `redis-core`
-and all four module packages.
+The modules are `Recommends:` of `redis`, so the test first asserts that a
+default install pulled in all four module packages.
 
 | Module | Commands exercised |
 |---|---|
@@ -77,10 +75,10 @@ RediSearch indexes a document and searches for it, rather than just creating
 an index, because index creation succeeds even when the module cannot actually
 index.
 
-### 3. `dnf install redisjson` — server with one module
+### 3. `dnf install redisjson` with weak dependencies off — server with one module
 
 A module package must be installable on its own. The test asserts that
-`redisjson` pulls in `redis-core` and nothing else from this spec, that
+`redisjson` pulls in `redis` and no other module, that
 `JSON.SET` works, and that `BF.ADD`, `TS.ADD` and `FT.CREATE` are unknown
 commands.
 

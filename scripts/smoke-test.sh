@@ -5,10 +5,13 @@
 # This deliberately tests both supported install shapes, because "the RPM
 # built" and "the module loads" are different claims:
 #
-#   redis-core    plain server. Only vector sets (compiled into the binary).
+#   redis, weak dependencies off
+#                 plain server. Only vector sets (compiled into the binary).
 #                 Every module command must be REJECTED -- that is what proves
 #                 a plain install really is plain.
 #   redis         the server plus all four modules, all commands working.
+#                 The modules are Recommends of redis, so dnf installs them
+#                 unless install_weak_deps is off.
 #
 # A third section starts from the packaged /etc/redis/redis.conf, which the
 # first two do not use -- see start_shipped() for why that matters.
@@ -31,6 +34,7 @@ ROOT_BASE="${ROOT_BASE:-$HOME/.cache/redis-smoke}"
 LOGDIR="${LOGDIR:-$ROOT_BASE/logs}"
 PORT="${PORT:-7890}"
 FAILED=0
+NOWEAK="--setopt=install_weak_deps=False"
 
 case "$MODE" in
   copr)
@@ -76,12 +80,13 @@ assert_reply() {
     esac
 }
 
+# install_root <pkg> <root> [extra dnf options...]
 install_root() {
-    local pkg="$1" root="$2"
+    local pkg="$1" root="$2"; shift 2
     sudo rm -rf "$root"; mkdir -p "$(dirname "$root")"
     sudo dnf -q -y --installroot="$root" --releasever="${CHROOT#fedora-}" \
         --releasever="$(echo "$CHROOT" | cut -d- -f2)" --use-host-config \
-        $DNF_REPO --refresh install "$pkg" >/dev/null 2>&1
+        $DNF_REPO --refresh "$@" install "$pkg" >/dev/null 2>&1
 }
 
 start_server() {
@@ -141,11 +146,18 @@ start_shipped() {
 
 # ---------------------------------------------------------------------------
 echo
-echo "=== 1/4  dnf install redis-core  (plain server) ==="
+echo "=== 1/4  dnf install redis, weak dependencies off  (plain server) ==="
 ROOT="$ROOT_BASE/plain"
-install_root redis-core "$ROOT" || { echo "install failed"; exit 1; }
+install_root redis "$ROOT" $NOWEAK || { echo "install failed"; exit 1; }
 echo "  installed: $(sudo rpm --root="$ROOT" -qa 2>/dev/null | grep -cE '^redis') redis package(s)"
 sudo rpm --root="$ROOT" -qa 2>/dev/null | grep -E '^redis' | sort | sed 's/^/    /'
+for p in redisbloom redisearch redisjson redistimeseries; do
+    if sudo rpm --root="$ROOT" -q "$p" >/dev/null 2>&1; then
+        bad "$p installed although weak dependencies are off"
+    else
+        ok "$p not installed"
+    fi
+done
 if start_server "$ROOT"; then
     assert_cmd "server responds"            "PONG"     PING
     assert_cmd "vector sets built in"       "1"        VADD vs VALUES 3 1 2 3 e1
@@ -164,8 +176,8 @@ echo "=== 2/4  dnf install redis  (server + all modules) ==="
 ROOT="$ROOT_BASE/full"
 install_root redis "$ROOT" || { echo "install failed"; exit 1; }
 sudo rpm --root="$ROOT" -qa 2>/dev/null | grep -E '^redis' | sort | sed 's/^/    /'
-# redis has no files; it must pull in the server and every module package.
-for p in redis-core redisbloom redisearch redisjson redistimeseries; do
+# The modules are weak dependencies of redis; a default install has them all.
+for p in redisbloom redisearch redisjson redistimeseries; do
     if sudo rpm --root="$ROOT" -q "$p" >/dev/null 2>&1; then
         ok "redis pulls in $p"
     else
@@ -196,16 +208,18 @@ sudo rm -rf "$ROOT"
 
 # ---------------------------------------------------------------------------
 echo
-echo "=== 3/4  dnf install redisjson  (server + one module) ==="
+echo "=== 3/4  dnf install redisjson, weak dependencies off  (server + one module) ==="
+# Without the option dnf would also install the other modules, because the
+# redis package that redisjson requires recommends them.
 ROOT="$ROOT_BASE/single"
-install_root redisjson "$ROOT" || { echo "install failed"; exit 1; }
+install_root redisjson "$ROOT" $NOWEAK || { echo "install failed"; exit 1; }
 sudo rpm --root="$ROOT" -qa 2>/dev/null | grep -E '^redis' | sort | sed 's/^/    /'
-if sudo rpm --root="$ROOT" -q redis-core >/dev/null 2>&1; then
-    ok "redisjson pulls in redis-core"
+if sudo rpm --root="$ROOT" -q redis >/dev/null 2>&1; then
+    ok "redisjson pulls in redis"
 else
-    bad "redisjson did not pull in redis-core"
+    bad "redisjson did not pull in redis"
 fi
-for p in redis redisbloom redisearch redistimeseries; do
+for p in redisbloom redisearch redistimeseries; do
     if sudo rpm --root="$ROOT" -q "$p" >/dev/null 2>&1; then
         bad "redisjson pulled in $p; a module must be installable on its own"
     else
@@ -225,7 +239,7 @@ sudo rm -rf "$ROOT"
 echo
 echo "=== 4/4  the packaged /etc/redis/redis.conf actually works ==="
 ROOT="$ROOT_BASE/shipped"
-install_root redis-core "$ROOT" || { echo "install failed"; exit 1; }
+install_root redis "$ROOT" || { echo "install failed"; exit 1; }
 
 # Static check: the daemon runs as redis and must be able to create its log.
 # Compare numeric uids against the install root's own passwd: `stat -c %U`
@@ -254,6 +268,8 @@ fi
 
 if start_shipped "$ROOT"; then
     assert_cmd "starts from the packaged config" "PONG" PING
+    # The packaged config includes modules.conf.d, so the modules are loaded.
+    assert_cmd "packaged config loads the modules" "OK" JSON.SET doc . '{"n":"fedora"}'
     stop_server
 else FAILED=$((FAILED+1)); fi
 sudo rm -rf "$ROOT"
