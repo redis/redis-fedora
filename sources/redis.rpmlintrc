@@ -15,7 +15,7 @@ addFilter(r"unknown-key")
 
 # --- Dictionary false positives -------------------------------------------
 # Product and API names, not misspellings.
-addFilter(r"spelling-error.*(rejson|redisearch|redisbloom|redisjson|downsampling|loadmodule|conf|toolchain)")
+addFilter(r"spelling-error.*(rejson|redisearch|redisbloom|redisjson|redistimeseries|downsampling|loadmodule|conf|toolchain)")
 
 # --- The redis service user -----------------------------------------------
 # Redis runs as its own unprivileged user, created via sysusers.d. The daemon
@@ -41,6 +41,12 @@ addFilter(r"redis-devel.*(no-documentation|only-non-binary-in-usr-lib)")
 # Each contains one module .so, its loadmodule stub and licences. redis itself
 # has no files at all. The server's docs are in redis-core.
 addFilter(r"^(redis|redisbloom|redisearch|redisjson|redistimeseries)\.[a-z0-9_]+: W: no-documentation")
+
+# --- redis has no files -----------------------------------------------------
+# It only requires redis-core and the four module packages. It cannot be
+# noarch: a noarch main package would make every subpackage noarch, and its
+# Requires are architecture-specific.
+addFilter(r"^redis\.[a-z0-9_]+: E: no-binary")
 
 # --- logrotate file name ---------------------------------------------------
 # /etc/logrotate.d/redis lives in redis-core but is named for the service

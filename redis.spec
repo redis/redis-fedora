@@ -140,8 +140,9 @@ Redis with every module upstream bundles: RediSearch, RedisJSON, RedisBloom
 and RedisTimeSeries. This package has no files of its own. It pulls in the
 server (redis-core) and the four module packages.
 
-Each module package drops a loadmodule stub into %{redis_modules_cfg}, which
-redis.conf includes, so the modules are live as soon as Redis starts.
+Each module package drops a loadmodule stub into
+%{redis_modules_cfg}, which redis.conf includes, so the modules
+are live as soon as Redis starts.
 
 For a server with no modules, install redis-core. To pick modules, install
 redis-core together with any of redisbloom, redisearch, redisjson and
@@ -166,8 +167,8 @@ Provides:          bundled(t-digest-c)
 RedisBloom %{bloom_ver}, as pinned by Redis %{version}. Adds Bloom and cuckoo
 filters, count-min sketch, top-k and t-digest data types to Redis.
 
-Installing this package enables the module: it drops a loadmodule stub into
-%{redis_modules_cfg}, which redis.conf includes.
+Installing this package enables the module: it drops a loadmodule stub
+into %{redis_modules_cfg}, which redis.conf includes.
 
 
 %package -n        redisearch
@@ -210,8 +211,8 @@ RediSearch %{search_ver}, as pinned by Redis %{version}. Adds secondary
 indexing, full-text search, vector similarity search and aggregations to
 Redis.
 
-Installing this package enables the module: it drops a loadmodule stub into
-%{redis_modules_cfg}, which redis.conf includes.
+Installing this package enables the module: it drops a loadmodule stub
+into %{redis_modules_cfg}, which redis.conf includes.
 
 
 %package -n        redisjson
@@ -240,8 +241,8 @@ Provides:          bundled(readies)
 RedisJSON %{json_ver}, as pinned by Redis %{version}. Adds a JSON data type
 with JSONPath queries to Redis.
 
-Installing this package enables the module: it drops a loadmodule stub into
-%{redis_modules_cfg}, which redis.conf includes.
+Installing this package enables the module: it drops a loadmodule stub
+into %{redis_modules_cfg}, which redis.conf includes.
 
 
 %package -n        redistimeseries
@@ -267,8 +268,8 @@ Provides:          bundled(minunit)
 RedisTimeSeries %{timeseries_ver}, as pinned by Redis %{version}. Adds a time
 series data type with downsampling, compaction and aggregation to Redis.
 
-Installing this package enables the module: it drops a loadmodule stub into
-%{redis_modules_cfg}, which redis.conf includes.
+Installing this package enables the module: it drops a loadmodule stub
+into %{redis_modules_cfg}, which redis.conf includes.
 
 
 %package -n        redis-core
