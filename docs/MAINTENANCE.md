@@ -57,10 +57,13 @@ Release:        1%{?dist}
 Add a `%changelog` entry. Do not write bare `%{version}` in changelog text —
 rpmlint flags `macro-in-%changelog`; escape as `%%{version}`.
 
-Leave the `Obsoletes:` bounds on the `redis` package alone; they only matter
-for upgrades from the short-lived per-module packages (`< 8.10.1-4`) and from
-`redis-full` (`< 8.10.1-8`), which is what the module package was called
-before `redis` took that role.
+Leave the `Obsoletes: redis-full < 8.10.1-8` bound on the `redis` package
+alone; it only matters for upgrades from the name that package had before
+`redis` took that role.
+
+Update the `License:` tags of `redisjson` and `redisearch` from the two
+`LICENSE SUMMARY` blocks that `%cargo_license_summary` prints in the build
+log. The first block is RedisJSON, the second is RediSearch.
 
 ### 4. Regenerate sources and build
 

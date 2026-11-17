@@ -55,6 +55,9 @@ catches that.
 
 ### 2. `dnf install redis` — server with every module
 
+`redis` has no files, so the test first asserts that it pulled in `redis-core`
+and all four module packages.
+
 | Module | Commands exercised |
 |---|---|
 | vector sets | `VADD` |
@@ -62,6 +65,10 @@ catches that.
 | RedisBloom | `BF.ADD`, `BF.EXISTS` (hit **and** miss) |
 | RedisTimeSeries | `TS.CREATE` with retention, `TS.ADD` |
 | RediSearch | `FT.CREATE`, then `HSET` and `FT.SEARCH` for a real match |
+| RediSearch SVS | `FT.CREATE` of an `SVS-VAMANA` vector index |
+
+The SVS check proves that SVS is compiled in. The package must not be built
+with `USE_SVS=OFF`.
 
 RedisBloom is checked for both a hit and a miss — `BF.EXISTS` returning `1`
 for everything would pass a naive test while being completely broken.
@@ -70,9 +77,16 @@ RediSearch indexes a document and searches for it, rather than just creating
 an index, because index creation succeeds even when the module cannot actually
 index.
 
-### 3. The packaged `/etc/redis/redis.conf` actually works
+### 3. `dnf install redisjson` — server with one module
 
-The first two sections start the server with a minimal config written by the
+A module package must be installable on its own. The test asserts that
+`redisjson` pulls in `redis-core` and nothing else from this spec, that
+`JSON.SET` works, and that `BF.ADD`, `TS.ADD` and `FT.CREATE` are unknown
+commands.
+
+### 4. The packaged `/etc/redis/redis.conf` actually works
+
+The first three sections start the server with a minimal config written by the
 test. That is a blind spot, and it hid two real bugs that only appeared when
 the package was installed on a live machine and started via systemd:
 
@@ -92,7 +106,7 @@ and that no `loadmodule` line survives in `redis.conf`.
 Be clear about the gaps:
 
 - **No persistence testing.** RDB/AOF round-trips are not exercised by the
-  script. Note that removing the `redis` package while module data exists on
+  script. Note that removing a module package while its data exists on
   disk leaves the server unable to start -- Redis refuses an RDB containing
   module data with no matching module (`no matching module 'ft_index0'`).
   That is Redis behaviour, not a packaging fault, but it is worth knowing

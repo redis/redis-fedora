@@ -1,22 +1,23 @@
 # Redis RPM packaging for Fedora
 
 Builds Redis **and every module upstream bundles with it** from a single
-source, and ships two things you can install:
+source, as these packages:
 
 | Package | What you get |
 |---|---|
 | `redis-core` | Plain server: `redis-server`, `redis-cli`, `redis-sentinel`. Vector sets included (compiled into the binary). No modules. |
-| `redis` | The same server plus **RediSearch, RedisJSON, RedisBloom and RedisTimeSeries**, active on restart. |
+| `redis` | The same server plus **RediSearch, RedisJSON, RedisBloom and RedisTimeSeries**, active on restart. It has no files; it pulls in `redis-core` and the four module packages. |
+| `redisbloom`, `redisearch`, `redisjson`, `redistimeseries` | One module each: the `.so` and its `loadmodule` stub. Each requires `redis-core`. |
 
 ```bash
 sudo dnf copr enable @redis/redis
-sudo dnf install redis-core     # plain
+sudo dnf install redis-core              # plain
 # or
-sudo dnf install redis          # everything
+sudo dnf install redis                   # everything
+# or
+sudo dnf install redis-core redisjson    # the server and chosen modules
 sudo systemctl enable --now redis
 ```
-
-There is no partial state: either no modules, or all of them.
 
 `redis-devel` is also built, for compiling third-party modules against this Redis.
 

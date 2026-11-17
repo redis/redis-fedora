@@ -30,14 +30,6 @@ addFilter(r"non-standard-(uid|gid) .* redis")
 addFilter(r"non-standard-dir-perm /(etc|var/lib|var/log)/redis")
 addFilter(r"non-readable /etc/redis/(redis|sentinel)\.conf")
 
-# --- Obsoletes without matching Provides ----------------------------------
-# Deliberate. The per-module packages (redisbloom, redisearch, redisjson,
-# redistimeseries) were replaced by the single redis-full package. Adding
-# Provides for the old names would make `dnf install redisbloom` succeed
-# again, which is exactly the per-module install shape this packaging removed.
-# Obsoletes alone migrates existing installs without resurrecting the names.
-addFilter(r"obsolete-not-provided (redisbloom|redisearch|redisjson|redistimeseries)")
-
 # --- Upstream ships no man pages ------------------------------------------
 # Nothing to install; not something packaging can fix.
 addFilter(r"no-manual-page-for-binary redis-")
@@ -45,10 +37,10 @@ addFilter(r"no-manual-page-for-binary redis-")
 # --- redis-devel is a header and RPM macros only --------------------------
 addFilter(r"redis-devel.*(no-documentation|only-non-binary-in-usr-lib)")
 
-# --- the redis package ships modules, not documentation -------------------
-# It contains only the module .so files, their loadmodule stubs and licences;
-# the server's docs are in redis-core.
-addFilter(r"^redis\.[a-z0-9_]+: W: no-documentation")
+# --- the module packages ship no documentation -----------------------------
+# Each contains one module .so, its loadmodule stub and licences. redis itself
+# has no files at all. The server's docs are in redis-core.
+addFilter(r"^(redis|redisbloom|redisearch|redisjson|redistimeseries)\.[a-z0-9_]+: W: no-documentation")
 
 # --- logrotate file name ---------------------------------------------------
 # /etc/logrotate.d/redis lives in redis-core but is named for the service

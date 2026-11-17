@@ -62,22 +62,30 @@ individually removable.
 
 ## The final grouping
 
-Subpackages were initially one per module (`redisbloom`, `redisearch`,
-`redisjson`, `redistimeseries`). That was collapsed: the modules now ship as
-a single package, because the requirement is to install either a plain
-server or a server with everything — not to hand-pick modules.
+One subpackage per module, plus `redis` to install them all:
 
 ```
 redis.spec
-  |-- redis-core     server, cli, sentinel, vector sets
-  |-- redis-devel    redismodule.h + RPM macros
-  `-- redis          the modules + their loadmodule stubs; requires redis-core
+  |-- redis-core        server, cli, sentinel, vector sets
+  |-- redis-devel       redismodule.h + RPM macros
+  |-- redisbloom        \
+  |-- redisearch         | one module each: the .so and its loadmodule stub;
+  |-- redisjson          | each requires redis-core
+  |-- redistimeseries   /
+  `-- redis             no files; requires redis-core and the four modules
 ```
 
-`redis` carries `Obsoletes:` for the short-lived per-module packages
-(8.10.1-3) and for `redis-full`, the name the module package used before the
-8.10.1-8 swap. Upgrading replaces them instead of leaving orphans whose
-`loadmodule` stubs point at deleted `.so` files.
+This is the layout agreed for all distributions: each module package adds its
+own file to `/etc/redis/modules.conf.d`. Removing one module package disables
+that module and leaves the others alone.
+
+Builds from 8.10.1-4 to 8.10.3-3 shipped all four modules inside `redis`. The
+files move to the module packages in the same transaction that upgrades
+`redis`, so an upgrade needs no `Obsoletes:`. `redis` still carries
+`Obsoletes: redis-full`, the name it had before the 8.10.1-8 swap.
+
+Each module package has its own `License:` tag and `bundled()` Provides, so
+they describe what that one `.so` contains.
 
 ### Why `redis` is the full stack
 
@@ -101,7 +109,7 @@ release tarball's `redis.conf` carries. They point into the source tree, and
 Redis aborts at startup when a `loadmodule` target is missing. If upstream
 changes that block, the patch stops applying and the build fails in `%prep`.
 
-`redis` drops a stub per module into that directory:
+Each module package drops its stub into that directory:
 
 ```
 /etc/redis/modules.conf.d/redisbloom.conf   -> loadmodule /usr/lib64/redis/modules/redisbloom.so
@@ -131,9 +139,10 @@ Being honest about the trade-off:
   is not theoretical: during development, core and RedisBloom built fine while
   RedisJSON and RedisTimeSeries failed, and the whole build produced zero
   packages.
-- **Version inflation.** `redis` carries the core version (8.10.1) even
-  though RediSearch upstream is 8.10.0. Actual upstream refs are recorded in
-  the `%global *_ver` macros and stated in the package description.
+- **Version inflation.** Every module package carries the core version, even
+  when the module's own upstream version differs (RedisJSON is 8.10.0 inside
+  Redis 8.10.3). Actual upstream refs are recorded in the `%global *_ver`
+  macros and stated in each module package's description.
 
 If independent module hotfixes ever become necessary, the old per-module specs
 remain in git history and a single-module spec can be revived.

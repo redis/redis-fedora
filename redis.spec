@@ -1,10 +1,14 @@
 # Redis and the modules upstream bundles with it, built from one source.
 #
 # Packages:
-#   redis          RediSearch, RedisJSON, RedisBloom and RedisTimeSeries, plus
-#                  their loadmodule stubs. Requires redis-core.
-#   redis-core     the plain server, with no modules.
-#   redis-devel    redismodule.h and RPM macros for building other modules.
+#   redis            no files. Requires redis-core and the four modules, so
+#                    `dnf install redis` gives the server with every module.
+#   redis-core       the plain server, with no modules.
+#   redisbloom       \
+#   redisearch        | one module each: the .so and its loadmodule stub.
+#   redisjson         | Each requires redis-core.
+#   redistimeseries  /
+#   redis-devel      redismodule.h and RPM macros for building other modules.
 #
 # Everything is in one spec because upstream pins each module to an exact ref
 # in modules/modules.yaml for every Redis release. Module versions follow the
@@ -51,25 +55,9 @@ Version:           8.10.3
 Release:           1%{?dist}
 Summary:           Persistent key-value database with all bundled modules
 
-# Server plus all modules. The core-only expression is on redis-core.
-# The parenthesised terms are the licences of the Rust crates linked into
-# rejson.so and redisearch.so, as printed by %%cargo_license_summary in the
-# build log. Update them from there on every bump.
-License:           %{shrink:
-    AGPL-3.0-only AND Apache-2.0 AND BSD-2-Clause AND BSD-3-Clause AND
-    BSL-1.0 AND CDLA-Permissive-2.0 AND ISC AND MIT AND MPL-2.0 AND
-    Unicode-3.0 AND Unicode-DFS-2016 AND Zlib AND
-    (0BSD OR MIT OR Apache-2.0) AND
-    (Apache-2.0 OR BSL-1.0) AND
-    (Apache-2.0 OR ISC OR MIT) AND
-    (Apache-2.0 OR MIT) AND
-    (Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT) AND
-    (BSD-2-Clause OR Apache-2.0 OR MIT) AND
-    (LGPL-3.0-or-later OR MPL-2.0) AND
-    (MIT OR Apache-2.0 OR LGPL-2.1-or-later) AND
-    (MIT OR Zlib OR Apache-2.0) AND
-    (Unlicense OR MIT)
-}
+# This package has no files. Each subpackage carries the licence expression
+# for what it ships.
+License:           AGPL-3.0-only
 URL:               https://redis.io
 
 # Upstream's release tarball already contains each module at its pinned ref.
@@ -130,37 +118,16 @@ BuildRequires:     procps-ng
 BuildRequires:     tcl8
 %endif
 
-# This package is the modules. The server is in redis-core.
+# The server and every module upstream bundles with it.
 Requires:          redis-core%{?_isa} = %{version}-%{release}
+Requires:          redisbloom%{?_isa} = %{version}-%{release}
+Requires:          redisearch%{?_isa} = %{version}-%{release}
+Requires:          redisjson%{?_isa} = %{version}-%{release}
+Requires:          redistimeseries%{?_isa} = %{version}-%{release}
 
-# Upgrade paths from the package names earlier builds of this spec used.
+# The name this package had before 8.10.1-8.
 Provides:          redis-full = %{version}-%{release}
 Obsoletes:         redis-full < 8.10.1-8
-Obsoletes:         redisbloom < 8.10.1-4
-Obsoletes:         redisearch < 8.10.1-4
-Obsoletes:         redisjson < 8.10.1-4
-Obsoletes:         redistimeseries < 8.10.1-4
-
-Provides:          bundled(RedisModulesSDK)
-Provides:          bundled(readies)
-Provides:          bundled(t-digest-c)
-Provides:          bundled(LibMR)
-Provides:          bundled(libevent) = 2.1.12
-Provides:          bundled(fast_double_parser)
-Provides:          bundled(dragonbox)
-Provides:          bundled(minunit)
-Provides:          bundled(libuv) = 1.48.0
-Provides:          bundled(VectorSimilarity)
-# RediSearch and LibMR each carry their own hiredis.
-Provides:          bundled(hiredis) = 1.3.0
-Provides:          bundled(hiredis) = 1.2.0
-Provides:          bundled(s2geometry)
-Provides:          bundled(cpu_features) = %{cpu_features_ver}
-Provides:          bundled(eve) = %{eve_ver}
-Provides:          bundled(robin-map) = %{robinmap_ver}
-Provides:          bundled(fmt) = %{fmt_ver}
-Provides:          bundled(spdlog) = %{spdlog_ver}
-Provides:          bundled(tomlplusplus) = %{toml_ver}
 
 # The modules are loaded by path, not linked against.
 %global __provides_exclude_from ^%{redis_modules_dir}/.*$
@@ -170,20 +137,138 @@ ExclusiveArch:     x86_64 aarch64
 
 %description
 Redis with every module upstream bundles: RediSearch, RedisJSON, RedisBloom
-and RedisTimeSeries. Installing this package pulls in the server and drops a
-loadmodule stub for each module into %{redis_modules_cfg}, which redis.conf
-includes -- so the modules are live as soon as Redis starts.
+and RedisTimeSeries. This package has no files of its own. It pulls in the
+server (redis-core) and the four module packages.
 
-  RediSearch %{search_ver}      full-text search, vector similarity, indexing
-  RedisJSON %{json_ver}       JSON data type with JSONPath queries
-  RedisBloom %{bloom_ver}      Bloom/cuckoo filters, count-min sketch, top-k
-  RedisTimeSeries %{timeseries_ver} time series with downsampling and compaction
+Each module package drops a loadmodule stub into %{redis_modules_cfg}, which
+redis.conf includes, so the modules are live as soon as Redis starts.
 
-For a server with no modules, install redis-core instead. There is no
-partial state: either no modules, or all of them.
+For a server with no modules, install redis-core. To pick modules, install
+redis-core together with any of redisbloom, redisearch, redisjson and
+redistimeseries.
 
-Vector sets are not listed above because they are not a module -- upstream
-compiles them into the server, so redis-core already provides them.
+Vector sets are not a module. Upstream compiles them into the server, so
+redis-core already provides them.
+
+
+%package -n        redisbloom
+Summary:           Bloom and cuckoo filters, count-min sketch and top-k for Redis
+# - RedisBloom: AGPL-3.0-only (upstream offers RSALv2, SSPLv1 or AGPLv3)
+# - deps/RedisModulesSDK: BSD-3-Clause and MIT
+# - deps/t-digest-c: MIT
+License:           AGPL-3.0-only AND BSD-3-Clause AND MIT
+Requires:          redis-core%{?_isa} = %{version}-%{release}
+Provides:          bundled(RedisModulesSDK)
+Provides:          bundled(readies)
+Provides:          bundled(t-digest-c)
+
+%description -n    redisbloom
+RedisBloom %{bloom_ver}, as pinned by Redis %{version}. Adds Bloom and cuckoo
+filters, count-min sketch, top-k and t-digest data types to Redis.
+
+Installing this package enables the module: it drops a loadmodule stub into
+%{redis_modules_cfg}, which redis.conf includes.
+
+
+%package -n        redisearch
+Summary:           Full-text search, vector similarity and indexing for Redis
+# - RediSearch and VectorSimilarity: AGPL-3.0-only (upstream offers RSALv2,
+#   SSPLv1 or AGPLv3)
+# - bundled C and C++ libraries: Apache-2.0, BSD-2-Clause, BSD-3-Clause,
+#   BSL-1.0, ISC, MIT
+# - the rest, including every parenthesised term: the Rust crates linked into
+#   redisearch.so, as printed by %%cargo_license_summary in the build log.
+#   Update them from there on every bump.
+License:           %{shrink:
+    AGPL-3.0-only AND Apache-2.0 AND BSD-2-Clause AND BSD-3-Clause AND
+    BSL-1.0 AND CDLA-Permissive-2.0 AND ISC AND MIT AND MPL-2.0 AND
+    Unicode-3.0 AND Unicode-DFS-2016 AND Zlib AND
+    (0BSD OR MIT OR Apache-2.0) AND
+    (Apache-2.0 OR BSL-1.0) AND
+    (Apache-2.0 OR ISC OR MIT) AND
+    (Apache-2.0 OR MIT) AND
+    (Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT) AND
+    (BSD-2-Clause OR Apache-2.0 OR MIT) AND
+    (LGPL-3.0-or-later OR MPL-2.0) AND
+    (MIT OR Apache-2.0 OR LGPL-2.1-or-later) AND
+    (MIT OR Zlib OR Apache-2.0) AND
+    (Unlicense OR MIT)
+}
+Requires:          redis-core%{?_isa} = %{version}-%{release}
+Provides:          bundled(VectorSimilarity)
+Provides:          bundled(hiredis) = 1.3.0
+Provides:          bundled(libuv) = 1.48.0
+Provides:          bundled(cpu_features) = %{cpu_features_ver}
+Provides:          bundled(eve) = %{eve_ver}
+Provides:          bundled(robin-map) = %{robinmap_ver}
+Provides:          bundled(fmt) = %{fmt_ver}
+Provides:          bundled(spdlog) = %{spdlog_ver}
+Provides:          bundled(tomlplusplus) = %{toml_ver}
+
+%description -n    redisearch
+RediSearch %{search_ver}, as pinned by Redis %{version}. Adds secondary
+indexing, full-text search, vector similarity search and aggregations to
+Redis.
+
+Installing this package enables the module: it drops a loadmodule stub into
+%{redis_modules_cfg}, which redis.conf includes.
+
+
+%package -n        redisjson
+Summary:           JSON data type with JSONPath queries for Redis
+# - RedisJSON: AGPL-3.0-only (upstream offers RSALv2, SSPLv1 or AGPLv3)
+# - deps/RedisModulesSDK: BSD-3-Clause and MIT
+# - the rest: the Rust crates linked into rejson.so, as printed by
+#   %%cargo_license_summary in the build log. Update them from there on
+#   every bump.
+License:           %{shrink:
+    AGPL-3.0-only AND Apache-2.0 AND BSD-3-Clause AND MIT AND Unicode-3.0 AND
+    (0BSD OR MIT OR Apache-2.0) AND
+    (Apache-2.0 OR BSL-1.0) AND
+    (Apache-2.0 OR MIT) AND
+    (Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT) AND
+    (BSD-2-Clause OR Apache-2.0 OR MIT) AND
+    (MIT OR Apache-2.0 OR LGPL-2.1-or-later) AND
+    (MIT OR Zlib OR Apache-2.0) AND
+    (Unlicense OR MIT)
+}
+Requires:          redis-core%{?_isa} = %{version}-%{release}
+Provides:          bundled(RedisModulesSDK)
+Provides:          bundled(readies)
+
+%description -n    redisjson
+RedisJSON %{json_ver}, as pinned by Redis %{version}. Adds a JSON data type
+with JSONPath queries to Redis.
+
+Installing this package enables the module: it drops a loadmodule stub into
+%{redis_modules_cfg}, which redis.conf includes.
+
+
+%package -n        redistimeseries
+Summary:           Time series data type for Redis
+# - RedisTimeSeries: AGPL-3.0-only (upstream offers RSALv2, SSPLv1 or AGPLv3)
+# - deps/LibMR with its libevent and hiredis: BSD-3-Clause and MIT
+# - deps/RedisModulesSDK: BSD-3-Clause and MIT
+# - deps/cpu_features: Apache-2.0
+# - deps/dragonbox, deps/fast_double_parser: Apache-2.0 OR BSL-1.0
+License:           AGPL-3.0-only AND Apache-2.0 AND BSD-3-Clause AND MIT AND (Apache-2.0 OR BSL-1.0)
+Requires:          redis-core%{?_isa} = %{version}-%{release}
+Provides:          bundled(RedisModulesSDK)
+Provides:          bundled(readies)
+Provides:          bundled(LibMR)
+Provides:          bundled(libevent) = 2.1.12
+Provides:          bundled(hiredis) = 1.2.0
+Provides:          bundled(cpu_features) = 0.10.1
+Provides:          bundled(fast_double_parser)
+Provides:          bundled(dragonbox)
+Provides:          bundled(minunit)
+
+%description -n    redistimeseries
+RedisTimeSeries %{timeseries_ver}, as pinned by Redis %{version}. Adds a time
+series data type with downsampling, compaction and aggregation to Redis.
+
+Installing this package enables the module: it drops a loadmodule stub into
+%{redis_modules_cfg}, which redis.conf includes.
 
 
 %package -n        redis-core
@@ -221,8 +306,8 @@ sorted sets.
 
 This is the plain server, with no modules loaded. Vector sets are compiled
 into it. Install the redis package to add RediSearch, RedisJSON, RedisBloom
-and RedisTimeSeries; both are built from this same source, so they can never
-drift apart.
+and RedisTimeSeries, or install the module packages one by one. All are
+built from this same source, so they can never drift apart.
 
 
 %package           devel
@@ -338,16 +423,15 @@ export CXXFLAGS="%{optflags} -Wno-error=maybe-uninitialized -Wno-error=unused-bu
 %cmake_build
 popd
 
-# List the vendored crates. An RPM generator turns the manifest into
-# bundled(crate()) Provides. The licence summaries feed the License tag.
+# List the vendored crates of each Rust module. An RPM generator turns the
+# cargo-vendor.txt a package ships into its bundled(crate()) Provides. The
+# licence summaries feed the License tags of redisjson and redisearch.
 for d in modules/redisjson/src modules/redisearch/src/src/redisearch_rs; do
     pushd $d
     %cargo_vendor_manifest
     %cargo_license_summary
     popd
 done
-sort -u modules/redisjson/src/cargo-vendor.txt \
-        modules/redisearch/src/src/redisearch_rs/cargo-vendor.txt > cargo-vendor.txt
 
 
 %check
@@ -404,16 +488,6 @@ install -pDm 0644 src/redismodule.h %{buildroot}%{_includedir}/redismodule.h
 mkdir -p %{buildroot}%{_rpmmacrodir}
 install -pDm 0644 macros.redis %{buildroot}%{_rpmmacrodir}/macros.%{name}
 
-# RedisBloom, RedisJSON and RedisTimeSeries ship identical licence texts, so
-# one copy covers them. The cmp fails the build if that stops being true.
-install -pm 0644 modules/redisbloom/src/LICENSE.txt LICENSE-modules.txt
-for m in redisjson redistimeseries; do
-    cmp -s modules/$m/src/LICENSE.txt LICENSE-modules.txt || {
-        echo "ERROR: $m licence text differs from redisbloom's; ship it separately"
-        exit 1
-    }
-done
-install -pm 0644 modules/redisearch/src/LICENSE.txt LICENSE-redisearch.txt
 
 
 # redis-core owns the units, so it carries the scriptlets.
@@ -430,19 +504,30 @@ install -pm 0644 modules/redisearch/src/LICENSE.txt LICENSE-redisearch.txt
 %systemd_postun_with_restart %{name}-sentinel.service
 
 
-# The modules.
+# No files: this package only pulls in redis-core and the four modules.
 %files
-# One copy per distinct licence text. See %%install.
-%license LICENSE-modules.txt
-%license LICENSE-redisearch.txt
-%license cargo-vendor.txt
+
+# One module each. The directories belong to redis-core.
+%files -n redisbloom
+%license modules/redisbloom/src/LICENSE.txt
 %{redis_modules_dir}/redisbloom.so
-%{redis_modules_dir}/redisearch.so
-%{redis_modules_dir}/rejson.so
-%{redis_modules_dir}/redistimeseries.so
 %config(noreplace) %{redis_modules_cfg}/redisbloom.conf
+
+%files -n redisearch
+%license modules/redisearch/src/LICENSE.txt
+%license modules/redisearch/src/src/redisearch_rs/cargo-vendor.txt
+%{redis_modules_dir}/redisearch.so
 %config(noreplace) %{redis_modules_cfg}/search.conf
+
+%files -n redisjson
+%license modules/redisjson/src/LICENSE.txt
+%license modules/redisjson/src/cargo-vendor.txt
+%{redis_modules_dir}/rejson.so
 %config(noreplace) %{redis_modules_cfg}/redisjson.conf
+
+%files -n redistimeseries
+%license modules/redistimeseries/src/LICENSE.txt
+%{redis_modules_dir}/redistimeseries.so
 %config(noreplace) %{redis_modules_cfg}/timeseries.conf
 
 # The server, and the directories the modules install into.
@@ -491,6 +576,11 @@ install -pm 0644 modules/redisearch/src/LICENSE.txt LICENSE-redisearch.txt
 - Remove the tarball's loadmodule lines in redis-conf.patch instead of sed.
 - Link RediSearch's bundled libraries statically, as upstream does. The module
   directory now holds only the four modules.
+- Ship each module in its own subpackage: redisbloom, redisearch, redisjson
+  and redistimeseries. redis now has no files and requires redis-core and the
+  four modules. Each module package has its own License tag and bundled
+  Provides.
+- Drop bundled(s2geometry). The source tree does not contain it.
 - Keep the debug info in rejson.so so that the debuginfo package covers it.
 - Drop the OpenSSL 4 warning override; 8.10.3 no longer uses the deprecated API.
 - Declare the vendored Rust crates as bundled(crate()) Provides and take their

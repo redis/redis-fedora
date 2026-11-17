@@ -7,17 +7,19 @@ a reasonable-looking change will silently break the build.
 ## What this repo is
 
 One RPM spec that builds Redis **and every module upstream bundles with it**
-from a single source, producing three packages:
+from a single source, producing these packages:
 
 | Package | Contents |
 |---|---|
 | `redis-core` | plain server; vector sets compiled in; **no modules** |
 | `redis-devel` | `redismodule.h` + RPM macros |
-| `redis` | the server plus all four modules (RediSearch, RedisJSON, RedisBloom, RedisTimeSeries) |
+| `redisbloom`, `redisearch`, `redisjson`, `redistimeseries` | one module each: the `.so` and its `loadmodule` stub |
+| `redis` | no files; requires `redis-core` and the four module packages |
 
-It replaced five separate packaging repos. Do not reintroduce per-module
-packages without reading `docs/DESIGN.md` — the split caused unsatisfiable
-dependencies, blocked co-installation, and two conflicting versioning schemes.
+It replaced five separate packaging repos. The modules are subpackages of
+this one spec. Do not move them back into separate source packages without
+reading `docs/DESIGN.md` — that split caused unsatisfiable dependencies,
+blocked co-installation, and two conflicting versioning schemes.
 
 ## Ground rules
 
@@ -106,8 +108,8 @@ hand-rolled snapshot) lacks the marker and breaks the offline build.
 
 `redis-core` owns `/etc/redis/modules.conf.d` (`0750 redis:root`) and
 `/usr/lib64/redis/modules`. A subpackage re-declaring them with different
-permissions produces a **file conflict that blocks installation**. The `redis`
-package places files into them and owns no directories.
+permissions produces a **file conflict that blocks installation**. The module
+packages place files into them and own no directories.
 
 ### 8. Keep `-DBUILD_SHARED_LIBS=OFF` on the RediSearch build
 
@@ -156,8 +158,11 @@ make smoke         # runtime assertions
 `make smoke` asserts that a plain `redis-core` install **rejects** `JSON.SET`,
 `BF.ADD`, `TS.ADD` and `FT.CREATE`. Those rejections are the test passing, not
 failing — they prove nothing leaked in through a weak dependency. That bug was
-real: old per-module RPMs carried `Supplements: redis`, so `dnf install redis`
-silently pulled in four unwanted packages.
+real: old per-module RPMs carried `Supplements: redis`, back when `redis` was
+the plain server, so installing it silently pulled in four unwanted packages.
+Never add `Supplements:` or `Recommends:` on `redis-core` to a module package.
+
+It also installs `redisjson` on its own and asserts that only RedisJSON loads.
 
 ## Reporting
 

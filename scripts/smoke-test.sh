@@ -141,7 +141,7 @@ start_shipped() {
 
 # ---------------------------------------------------------------------------
 echo
-echo "=== 1/2  dnf install redis-core  (plain server) ==="
+echo "=== 1/4  dnf install redis-core  (plain server) ==="
 ROOT="$ROOT_BASE/plain"
 install_root redis-core "$ROOT" || { echo "install failed"; exit 1; }
 echo "  installed: $(sudo rpm --root="$ROOT" -qa 2>/dev/null | grep -cE '^redis') redis package(s)"
@@ -160,10 +160,18 @@ sudo rm -rf "$ROOT"
 
 # ---------------------------------------------------------------------------
 echo
-echo "=== 2/2  dnf install redis  (server + all modules) ==="
+echo "=== 2/4  dnf install redis  (server + all modules) ==="
 ROOT="$ROOT_BASE/full"
 install_root redis "$ROOT" || { echo "install failed"; exit 1; }
 sudo rpm --root="$ROOT" -qa 2>/dev/null | grep -E '^redis' | sort | sed 's/^/    /'
+# redis has no files; it must pull in the server and every module package.
+for p in redis-core redisbloom redisearch redisjson redistimeseries; do
+    if sudo rpm --root="$ROOT" -q "$p" >/dev/null 2>&1; then
+        ok "redis pulls in $p"
+    else
+        bad "redis did not pull in $p"
+    fi
+done
 if start_server "$ROOT"; then
     echo "  modules: $($CLI MODULE LIST 2>/dev/null | paste - - - - - - - - 2>/dev/null | awk '{printf "%s ", $2}')"
     assert_cmd "server responds"     "PONG" PING
@@ -179,13 +187,43 @@ if start_server "$ROOT"; then
     $CLI HSET item:1 title "fedora rpm packaging" price 10 >/dev/null 2>&1
     sleep 1
     assert_reply "RediSearch FT.SEARCH" "item:1" FT.SEARCH idx fedora
+    # SVS must be compiled in (USE_SVS on, built from source).
+    assert_cmd "RediSearch SVS-VAMANA index" "OK" FT.CREATE vidx ON HASH PREFIX 1 vec: \
+        SCHEMA v VECTOR SVS-VAMANA 6 TYPE FLOAT32 DIM 2 DISTANCE_METRIC L2
     stop_server
 else FAILED=$((FAILED+1)); fi
 sudo rm -rf "$ROOT"
 
 # ---------------------------------------------------------------------------
 echo
-echo "=== 3/3  the packaged /etc/redis/redis.conf actually works ==="
+echo "=== 3/4  dnf install redisjson  (server + one module) ==="
+ROOT="$ROOT_BASE/single"
+install_root redisjson "$ROOT" || { echo "install failed"; exit 1; }
+sudo rpm --root="$ROOT" -qa 2>/dev/null | grep -E '^redis' | sort | sed 's/^/    /'
+if sudo rpm --root="$ROOT" -q redis-core >/dev/null 2>&1; then
+    ok "redisjson pulls in redis-core"
+else
+    bad "redisjson did not pull in redis-core"
+fi
+for p in redis redisbloom redisearch redistimeseries; do
+    if sudo rpm --root="$ROOT" -q "$p" >/dev/null 2>&1; then
+        bad "redisjson pulled in $p; a module must be installable on its own"
+    else
+        ok "$p not installed"
+    fi
+done
+if start_server "$ROOT"; then
+    assert_cmd "RedisJSON  JSON.SET"   "OK"              JSON.SET doc . '{"n":"fedora"}'
+    assert_cmd "no RedisBloom"         "unknown command" BF.ADD f x
+    assert_cmd "no RedisTimeSeries"    "unknown command" TS.ADD t 1 1
+    assert_cmd "no RediSearch"         "unknown command" FT.CREATE i ON HASH PREFIX 1 k: SCHEMA t TEXT
+    stop_server
+else FAILED=$((FAILED+1)); fi
+sudo rm -rf "$ROOT"
+
+# ---------------------------------------------------------------------------
+echo
+echo "=== 4/4  the packaged /etc/redis/redis.conf actually works ==="
 ROOT="$ROOT_BASE/shipped"
 install_root redis-core "$ROOT" || { echo "install failed"; exit 1; }
 
