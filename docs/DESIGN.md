@@ -96,6 +96,11 @@ agreed across distributions.
 include /etc/redis/modules.conf.d/*.conf
 ```
 
+The same patch removes the four `loadmodule ./modules/...` lines that the
+release tarball's `redis.conf` carries. They point into the source tree, and
+Redis aborts at startup when a `loadmodule` target is missing. If upstream
+changes that block, the patch stops applying and the build fails in `%prep`.
+
 `redis` drops a stub per module into that directory:
 
 ```

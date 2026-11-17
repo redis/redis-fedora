@@ -97,9 +97,10 @@ stale pin fails at configure time after most of the build has already run.
 
 ### 6. Module sources re-clone themselves unless stopped
 
-`modules/common.mk` clones a module over the network if `src/.git` is missing,
-and the release tarball has no `.git`. `%prep` touches `src/.prepared` to
-prevent it. Removing those `touch` lines breaks the offline build.
+`modules/common.mk` clones a module over the network unless `src/.prepared`
+exists. The release tarball ships that marker for all four modules, so the
+spec does nothing about it. A tarball made any other way (a git archive, a
+hand-rolled snapshot) lacks the marker and breaks the offline build.
 
 ### 7. Do not declare `%dir` for redis-owned directories
 
@@ -108,13 +109,13 @@ prevent it. Removing those `touch` lines breaks the offline build.
 permissions produces a **file conflict that blocks installation**. The `redis`
 package places files into them and owns no directories.
 
-### 8. Companion libraries are scattered
+### 8. Keep `-DBUILD_SHARED_LIBS=OFF` on the RediSearch build
 
-RediSearch's libraries are not all beside `redisearch.so` — hiredis is in
-`hiredis/`, fmt and spdlog under `_deps/<name>-build/`. `%install` collects
-each from its own location, runs `ldconfig -n` for sonames, then `patchelf
---set-rpath '$ORIGIN'` on the module and VectorSimilarity libs only. Leaf
-libraries must **not** be patchelf'd; it can corrupt simple ELFs.
+`%cmake` passes `-DBUILD_SHARED_LIBS=ON` by default. RediSearch's bundled
+libraries (VectorSimilarity, cpu_features, hiredis, fmt, spdlog) then build as
+separate `.so` files that `redisearch.so` needs at load time, and the package
+has to ship them and fix up RPATHs. Upstream links them statically; the spec
+does the same, so the module directory holds only the four modules.
 
 ### 9. Local mock tests one chroot; that is not enough
 

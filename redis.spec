@@ -94,6 +94,8 @@ Source13:          %{name}.rpmlintrc
 
 # RPM layout paths in redis.conf and sentinel.conf, and an include of
 # %%{redis_modules_cfg}/*.conf so that the module package enables itself.
+# Also removes the tarball's loadmodule lines: they point into the source
+# tree, and Redis aborts at startup when a loadmodule target is missing.
 # Distribution-specific, not for upstream.
 Patch0:            redis-conf.patch
 
@@ -117,7 +119,6 @@ BuildRequires:     jq
 BuildRequires:     which
 # RediSearch takes Boost from the system (-DBOOST_DIR).
 BuildRequires:     boost-devel >= 1.83
-BuildRequires:     patchelf
 BuildRequires:     clang-devel
 # Crates come from Source1 and Source2, so no rust-*-devel BuildRequires.
 BuildRequires:     rust >= 1.80
@@ -161,9 +162,7 @@ Provides:          bundled(fmt) = %{fmt_ver}
 Provides:          bundled(spdlog) = %{spdlog_ver}
 Provides:          bundled(tomlplusplus) = %{toml_ver}
 
-# RediSearch's companion libraries are private to the module directory. Keep
-# them out of the automatic Requires and Provides.
-%global __requires_exclude ^lib(VectorSimilarity|VectorSimilaritySpaces|VectorSimilaritySpaces_no_optimization|cpu_features|hiredis|hiredis_ssl|fmt|spdlog)\\.so
+# The modules are loaded by path, not linked against.
 %global __provides_exclude_from ^%{redis_modules_dir}/.*$
 
 # The module build scripts only support x86_64 and aarch64.
@@ -199,10 +198,6 @@ Summary:           A persistent key-value database
 # - deps/xxhash, deps/fast_float: BSD-2-Clause / MIT
 License:           AGPL-3.0-only AND BSD-3-Clause AND BSD-2-Clause AND MIT AND BSL-1.0
 Requires:          logrotate
-
-# Named redis-server in Copr builds up to 8.10.3-1.
-Provides:          redis-server = %{version}-%{release}
-Obsoletes:         redis-server < 8.10.3-2
 
 # Both packages install the redis-* binaries and redis.service.
 Conflicts:         valkey-compat-redis
@@ -243,18 +238,6 @@ Header and RPM macros for building modules against this Redis.
 %prep
 %autosetup -n redis-%{version} -p1
 
-# The tarball's redis.conf has loadmodule lines with source-tree paths
-# (./modules/<name>/<lib>.so). Redis aborts at startup when a loadmodule
-# target is missing, so remove them. The stubs in %%{redis_modules_cfg}
-# enable the modules instead.
-sed -i '/^# >>> BEGIN: loadmodule paths/,/^# <<< END: loadmodule paths/d' redis.conf
-# Fail the build if upstream changes the markers and a line is left behind.
-if grep -q '^loadmodule' redis.conf; then
-    echo "ERROR: redis.conf still contains loadmodule lines after stripping:"
-    grep -n '^loadmodule' redis.conf
-    exit 1
-fi
-
 # Bundled licence texts, moved to the top level for %%license.
 mv deps/jemalloc/COPYING          COPYING-jemalloc
 mv deps/lua/COPYRIGHT             COPYRIGHT-lua
@@ -263,17 +246,16 @@ mv deps/hdr_histogram/LICENSE.txt LICENSE-hdrhistogram
 mv deps/fpconv/LICENSE.txt        LICENSE-fpconv
 mv deps/xxhash/LICENSE            LICENSE-xxhash
 
-# modules/common.mk clones a module over the network unless src/.prepared
-# exists.
-for m in redisbloom redisearch redisjson redistimeseries; do
-    touch modules/$m/src/.prepared
-done
-
 # --- RedisJSON: vendored crates -------------------------------------------
 tar xzf %{SOURCE1} -C modules/redisjson/src
 mkdir -p modules/redisjson/src/.cargo
 cp -a modules/redisjson/src/vendor/.cargo/config.toml \
       modules/redisjson/src/.cargo/config.toml
+
+# RedisJSON's Makefile moves the debug info out of rejson.so into a sidecar
+# file. rpm has to find it in the module to build the debuginfo package.
+grep -q 'extract_symbols_safe.sh' modules/redisjson/src/Makefile
+sed -i '/extract_symbols_safe.sh/d' modules/redisjson/src/Makefile
 
 # --- RediSearch: vendored crates and FetchContent dependencies -------------
 tar xzf %{SOURCE2} -C modules/redisearch/src
@@ -317,9 +299,7 @@ EOF
 
 
 %build
-# Redis builds with -Werror=deprecated-declarations and still uses APIs that
-# OpenSSL 4 deprecates.
-%global make_flags DEBUG="" V="echo" BUILD_WITH_SYSTEMD=yes BUILD_TLS=yes REDIS_CFLAGS="-Wno-error=deprecated-declarations"
+%global make_flags DEBUG="" V="echo" BUILD_WITH_SYSTEMD=yes BUILD_TLS=yes
 
 export CARGO_NET_OFFLINE=true
 
@@ -333,7 +313,11 @@ export CARGO_NET_OFFLINE=true
 pushd modules/redisearch/src
 RS_ROOT=$PWD
 export CXXFLAGS="%{optflags} -Wno-error=maybe-uninitialized -Wno-error=unused-but-set-variable"
+# %%cmake defaults to BUILD_SHARED_LIBS=ON, which would turn RediSearch's
+# bundled libraries (VectorSimilarity, hiredis, fmt, ...) into separate shared
+# objects. Upstream links them statically into redisearch.so.
 %cmake \
+    -DBUILD_SHARED_LIBS=OFF \
     -DCOORD_TYPE=oss \
     -DBOOST_DIR=%{_includedir} \
     -DREDISEARCH_BUILD_SHARED=ON \
@@ -388,41 +372,9 @@ install -pm 0755 modules/redisbloom/redisbloom.so           %{buildroot}%{redis_
 install -pm 0755 modules/redisjson/rejson.so                %{buildroot}%{redis_modules_dir}/rejson.so
 install -pm 0755 modules/redistimeseries/redistimeseries.so %{buildroot}%{redis_modules_dir}/redistimeseries.so
 
-# --- RediSearch and its private libraries -----------------------------------
-# They are spread over the build tree: hiredis in hiredis/, fmt and spdlog
-# under _deps/<name>-build. Symlinks are skipped and recreated by ldconfig.
-RS_BUILD=modules/redisearch/src/%{__cmake_builddir}
-install -pm 0755 $RS_BUILD/redisearch.so %{buildroot}%{redis_modules_dir}/redisearch.so
-
-find $RS_BUILD \( -name 'libVectorSimilarity*.so' -o -name 'libcpu_features.so' \) \
-    ! -type l -exec install -pm 0755 {} %{buildroot}%{redis_modules_dir}/ \;
-
-for f in $RS_BUILD/hiredis/libhiredis.so.* $RS_BUILD/hiredis/libhiredis_ssl.so.*; do
-    [ -L "$f" ] || [ ! -f "$f" ] || install -pm 0755 "$f" %{buildroot}%{redis_modules_dir}/
-done
-
-for lib in fmt spdlog; do
-    find $RS_BUILD/_deps/${lib}-build -name "lib${lib}.so*" \
-        ! -type l -exec install -pm 0755 {} %{buildroot}%{redis_modules_dir}/ \;
-done
-
-# Recreate the soname symlinks.
-ldconfig -n %{buildroot}%{redis_modules_dir}
-
-# $ORIGIN RPATH only on the libraries that load siblings from this directory.
-# Do not patchelf the leaf libraries (hiredis, cpu_features, fmt): it can
-# corrupt ELFs with simple program headers. spdlog needs it because CMake
-# leaves a build-tree RPATH to fmt.
-for f in %{buildroot}%{redis_modules_dir}/redisearch.so \
-         %{buildroot}%{redis_modules_dir}/libVectorSimilarity.so \
-         %{buildroot}%{redis_modules_dir}/libVectorSimilaritySpaces.so; do
-    [ -f "$f" ] && patchelf --set-rpath '$ORIGIN' "$f"
-done
-for f in %{buildroot}%{redis_modules_dir}/libspdlog.so.*; do
-    [ -f "$f" ] && [ ! -L "$f" ] && patchelf --set-rpath '$ORIGIN' "$f"
-done
-# A failing last test in the loops above would abort %%install.
-:
+# --- RediSearch -------------------------------------------------------------
+install -pm 0755 modules/redisearch/src/%{__cmake_builddir}/redisearch.so \
+    %{buildroot}%{redis_modules_dir}/redisearch.so
 
 # --- loadmodule stubs -------------------------------------------------------
 # One per module. redis.conf includes this directory (Patch0).
@@ -488,7 +440,6 @@ install -pm 0644 modules/redisearch/src/LICENSE.txt LICENSE-redisearch.txt
 %{redis_modules_dir}/redisearch.so
 %{redis_modules_dir}/rejson.so
 %{redis_modules_dir}/redistimeseries.so
-%{redis_modules_dir}/lib*.so*
 %config(noreplace) %{redis_modules_cfg}/redisbloom.conf
 %config(noreplace) %{redis_modules_cfg}/search.conf
 %config(noreplace) %{redis_modules_cfg}/redisjson.conf
@@ -536,8 +487,12 @@ install -pm 0644 modules/redisearch/src/LICENSE.txt LICENSE-redisearch.txt
   at 8.10.1; RedisBloom (8.10.1) and RedisJSON (8.10.0) are unchanged.
 - Rename redis-server to redis-core and move the loadmodule stubs to
   /etc/redis/modules.conf.d, the layout agreed for all distributions.
-  redis-core provides and obsoletes redis-server.
 - Use upstream's release tarball as Source0. It already contains the modules.
+- Remove the tarball's loadmodule lines in redis-conf.patch instead of sed.
+- Link RediSearch's bundled libraries statically, as upstream does. The module
+  directory now holds only the four modules.
+- Keep the debug info in rejson.so so that the debuginfo package covers it.
+- Drop the OpenSSL 4 warning override; 8.10.3 no longer uses the deprecated API.
 - Declare the vendored Rust crates as bundled(crate()) Provides and take their
   licences into the License tag.
 - Conflict with valkey-compat-redis, which installs the same files.

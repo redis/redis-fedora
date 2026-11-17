@@ -72,17 +72,11 @@ they are not rediscovered.
 
 ## 1. `common.mk` re-clones modules
 
-`modules/common.mk`'s `get_source` target treats a missing `src/.git` as "not
-cloned yet" and clones over the network. But the release tarball has no
-`.git` in the module directories.
+`modules/common.mk`'s `get_source` target clones a module over the network
+unless `modules/<name>/src/.prepared` exists.
 
-**Fix** — `%prep` touches the marker file the target checks:
-
-```bash
-for m in redisbloom redisearch redisjson redistimeseries; do
-    touch modules/$m/src/.prepared
-done
-```
+**Fix** — none needed in the spec. The release tarball ships the marker for
+all four modules. Use that tarball as Source0; a git archive does not have it.
 
 ## 2. Cargo wants the crates.io index
 
@@ -146,21 +140,16 @@ Upstream's own bundled build disables it for exactly this reason (see the
 `build_env` comment in `modules.yaml`). The spec passes
 `-DINLINE_LSE_ATOMICS=OFF`.
 
-## Companion shared libraries
+## RediSearch's bundled libraries are linked statically
 
-RediSearch links against libraries that are **not all in one place**:
+`%cmake` passes `-DBUILD_SHARED_LIBS=ON` by default. RediSearch's bundled
+libraries (VectorSimilarity, cpu_features, hiredis, fmt, spdlog) do not name a
+library type, so that default turns each into a separate `.so` which
+`redisearch.so` needs at load time.
 
-```
-libVectorSimilarity*.so, libcpu_features.so   in the build dir
-libhiredis*.so.*                              in hiredis/
-libfmt.so.*, libspdlog.so.*                   in _deps/<name>-build/
-```
-
-`%install` collects each from where its own build system puts it, skips
-symlinks, regenerates sonames with `ldconfig -n`, then sets
-`--set-rpath '$ORIGIN'` with `patchelf` on the module and the VectorSimilarity
-libraries so they find their siblings. Leaf libraries are deliberately **not**
-patchelf'd — it can corrupt simple ELFs that lack complex program headers.
+Upstream's build leaves `BUILD_SHARED_LIBS` off and links them into
+`redisearch.so`. The spec passes `-DBUILD_SHARED_LIBS=OFF` to match, so the
+package ships one file for the module and needs no RPATH handling.
 
 ## Module ABI guard
 

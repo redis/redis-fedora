@@ -1,5 +1,4 @@
 diff --git a/redis.conf b/redis.conf
-index 30a3d8b57..edfd8bdb6 100644
 --- a/redis.conf
 +++ b/redis.conf
 @@ -43,6 +43,8 @@
@@ -11,7 +10,7 @@ index 30a3d8b57..edfd8bdb6 100644
  
  ################################## MODULES #####################################
  
-@@ -342,7 +344,7 @@ daemonize no
+@@ -386,7 +388,7 @@
  # The default is "no". To run under upstart/systemd, you can simply uncomment
  # the line below:
  #
@@ -20,7 +19,7 @@ index 30a3d8b57..edfd8bdb6 100644
  
  # If a pid file is specified, Redis writes it where specified at startup
  # and removes it at exit.
-@@ -356,7 +358,7 @@ daemonize no
+@@ -400,7 +402,7 @@
  #
  # Note that on modern Linux systems "/run/redis.pid" is more conforming
  # and should be used instead.
@@ -29,7 +28,7 @@ index 30a3d8b57..edfd8bdb6 100644
  
  # Specify the server verbosity level.
  # This can be one of:
-@@ -370,7 +372,7 @@ loglevel notice
+@@ -414,7 +416,7 @@
  # Specify the log file name. Also the empty string can be used to force
  # Redis to log on the standard output. Note that if you use standard
  # output for logging but daemonize, logs will be sent to /dev/null
@@ -38,7 +37,7 @@ index 30a3d8b57..edfd8bdb6 100644
  
  # To enable logging to the system logger, just set 'syslog-enabled' to yes,
  # and optionally update the other syslog parameters to suit your needs.
-@@ -530,7 +532,7 @@ rdb-del-sync-files no
+@@ -574,7 +576,7 @@
  # The Append Only File will also be created inside this directory.
  #
  # Note that you must specify a directory here, not a file name.
@@ -47,11 +46,24 @@ index 30a3d8b57..edfd8bdb6 100644
  
  ################################# REPLICATION #################################
  
+@@ -2747,13 +2749,6 @@
+ # Active:       redisbloom redisearch redisjson redistimeseries
+ # Missing .so:  <none>
+ # Bad manifest: <none>
+-
+-# >>> BEGIN: loadmodule paths (replaced by make deploy) <<<
+-loadmodule ./modules/redisbloom/redisbloom.so
+-loadmodule ./modules/redisearch/redisearch.so
+-loadmodule ./modules/redisjson/rejson.so
+-loadmodule ./modules/redistimeseries/redistimeseries.so
+-# <<< END: loadmodule paths <<<
+ 
+ # >>> BEGIN module: redisbloom <<<
+ ########################### BLOOM FILTERS CONFIG ##############################
 diff --git a/sentinel.conf b/sentinel.conf
-index c7ce1cba7..fa9263624 100644
 --- a/sentinel.conf
 +++ b/sentinel.conf
-@@ -12,7 +12,7 @@ port 26379
+@@ -12,7 +12,7 @@
  # By default Redis Sentinel does not run as a daemon. Use 'yes' if you need it.
  # Note that Redis will write a pid file in /var/run/redis-sentinel.pid when
  # daemonized.
@@ -60,7 +72,7 @@ index c7ce1cba7..fa9263624 100644
  
  # When running daemonized, Redis Sentinel writes a pid file in
  # /var/run/redis-sentinel.pid by default. You can specify a custom pid file
-@@ -31,7 +31,7 @@ loglevel notice
+@@ -31,7 +31,7 @@
  # Specify the log file name. Also the empty string can be used to force
  # Sentinel to log on the standard output. Note that if you use standard
  # output for logging but daemonize, logs will be sent to /dev/null
@@ -69,7 +81,7 @@ index c7ce1cba7..fa9263624 100644
  
  # To enable logging to the system logger, just set 'syslog-enabled' to yes,
  # and optionally update the other syslog parameters to suit your needs.
-@@ -70,7 +70,7 @@ logfile ""
+@@ -70,7 +70,7 @@
  # For Redis Sentinel to chdir to /tmp at startup is the simplest thing
  # for the process to don't interfere with administrative tasks such as
  # unmounting filesystems.
@@ -78,7 +90,7 @@ index c7ce1cba7..fa9263624 100644
  
  # sentinel monitor <master-name> <ip> <redis-port> <quorum>
  #
-@@ -359,3 +359,5 @@ SENTINEL announce-hostnames no
+@@ -359,3 +359,5 @@
  # over.
  
  SENTINEL master-reboot-down-after-period mymaster 0
