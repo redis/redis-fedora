@@ -1,0 +1,10 @@
+--- a/modules/redisearch/src/deps/VectorSimilarity/deps/ScalableVectorSearch/include/svs/core/allocator.h
++++ b/modules/redisearch/src/deps/VectorSimilarity/deps/ScalableVectorSearch/include/svs/core/allocator.h
+@@ -53,6 +53,7 @@
+ #endif // __linux__
+ 
+ #include <memory>
++#include <mutex>
+ #include <optional>
+ #include <string>
+ #include <sys/mman.h>

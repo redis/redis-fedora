@@ -20,7 +20,7 @@ Directly, with more control:
 
 ```bash
 scripts/smoke-test.sh copr fedora-43-x86_64
-scripts/smoke-test.sh local ~/mock-results/redis-8.10.1-4
+scripts/smoke-test.sh local ~/mock-results/redis-8.10.3-1
 ```
 
 It installs into a throwaway root under `~/.cache/redis-smoke`, starts
@@ -33,7 +33,10 @@ if any assertion fails.
 
 ## What it asserts
 
-### 1. `dnf install redis-core` — plain server
+### 1. `dnf install redis` with weak dependencies off — plain server
+
+The test installs with `--setopt=install_weak_deps=False` and first asserts
+that none of the four module packages was installed.
 
 | Check | Expected |
 |---|---|
@@ -45,15 +48,13 @@ if any assertion fails.
 | `FT.CREATE` | **`unknown command`** |
 
 The four "unknown command" results are the point, not a failure. They are
-what proves a plain install really is plain — that no module leaked in via a
-weak dependency and no stale `loadmodule` stub is lying around.
-
-This matters because it has been wrong before: while old per-module packages
-were still published, they carried `Supplements: redis`, so `dnf install redis`
-silently dragged in four unwanted module packages. Only a runtime check
-catches that.
+what proves a plain install really is plain: no module is compiled in and no
+stale `loadmodule` stub is lying around.
 
 ### 2. `dnf install redis` — server with every module
+
+The modules are `Recommends:` of `redis`, so the test first asserts that a
+default install pulled in all four module packages.
 
 | Module | Commands exercised |
 |---|---|
@@ -62,6 +63,10 @@ catches that.
 | RedisBloom | `BF.ADD`, `BF.EXISTS` (hit **and** miss) |
 | RedisTimeSeries | `TS.CREATE` with retention, `TS.ADD` |
 | RediSearch | `FT.CREATE`, then `HSET` and `FT.SEARCH` for a real match |
+| RediSearch SVS | `FT.CREATE` of an `SVS-VAMANA` vector index |
+
+The SVS check proves that SVS is compiled in. The package must not be built
+with `USE_SVS=OFF`.
 
 RedisBloom is checked for both a hit and a miss — `BF.EXISTS` returning `1`
 for everything would pass a naive test while being completely broken.
@@ -70,9 +75,16 @@ RediSearch indexes a document and searches for it, rather than just creating
 an index, because index creation succeeds even when the module cannot actually
 index.
 
-### 3. The packaged `/etc/redis/redis.conf` actually works
+### 3. `dnf install redisjson` with weak dependencies off — server with one module
 
-The first two sections start the server with a minimal config written by the
+A module package must be installable on its own. The test asserts that
+`redisjson` pulls in `redis` and no other module, that
+`JSON.SET` works, and that `BF.ADD`, `TS.ADD` and `FT.CREATE` are unknown
+commands.
+
+### 4. The packaged `/etc/redis/redis.conf` actually works
+
+The first three sections start the server with a minimal config written by the
 test. That is a blind spot, and it hid two real bugs that only appeared when
 the package was installed on a live machine and started via systemd:
 
@@ -92,7 +104,7 @@ and that no `loadmodule` line survives in `redis.conf`.
 Be clear about the gaps:
 
 - **No persistence testing.** RDB/AOF round-trips are not exercised by the
-  script. Note that removing the `redis` package while module data exists on
+  script. Note that removing a module package while its data exists on
   disk leaves the server unable to start -- Redis refuses an RDB containing
   module data with no matching module (`no matching module 'ft_index0'`).
   That is Redis behaviour, not a packaging fault, but it is worth knowing
