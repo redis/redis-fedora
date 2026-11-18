@@ -89,6 +89,10 @@ Source13:          %{name}.rpmlintrc
 # of the included module files out of redis.conf.
 # Distribution-specific, not for upstream.
 Patch0:            redis-conf.patch
+# ScalableVectorSearch, bundled by RediSearch, uses std::mutex in a header
+# that does not include <mutex>. GCC 16 no longer provides it through other
+# headers, so the build fails on Fedora 44 and later. For upstream.
+Patch1:            redisearch-svs-mutex.patch
 
 BuildRequires:     gcc
 BuildRequires:     gcc-c++
