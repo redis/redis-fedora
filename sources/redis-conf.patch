@@ -1,16 +1,21 @@
 diff --git a/redis.conf b/redis.conf
 --- a/redis.conf
 +++ b/redis.conf
-@@ -43,6 +43,8 @@
+@@ -43,6 +43,13 @@
  # include /path/to/other.conf
  # include /path/to/fragments/*.conf
  #
 +# Module configuration files
 +include /etc/redis/modules.conf.d/*.conf
++#
++# CONFIG REWRITE must not copy settings that come from the included files
++# into this file. Without this, a rewrite adds loadmodule lines here and the
++# next start loads each module twice and fails.
++config-rewrite-source-aware yes
  
  ################################## MODULES #####################################
  
-@@ -386,7 +388,7 @@
+@@ -419,7 +426,7 @@
  # The default is "no". To run under upstart/systemd, you can simply uncomment
  # the line below:
  #
@@ -19,7 +24,7 @@ diff --git a/redis.conf b/redis.conf
  
  # If a pid file is specified, Redis writes it where specified at startup
  # and removes it at exit.
-@@ -400,7 +402,7 @@
+@@ -433,7 +440,7 @@
  #
  # Note that on modern Linux systems "/run/redis.pid" is more conforming
  # and should be used instead.
@@ -28,7 +33,7 @@ diff --git a/redis.conf b/redis.conf
  
  # Specify the server verbosity level.
  # This can be one of:
-@@ -414,7 +416,7 @@
+@@ -447,7 +454,7 @@
  # Specify the log file name. Also the empty string can be used to force
  # Redis to log on the standard output. Note that if you use standard
  # output for logging but daemonize, logs will be sent to /dev/null
@@ -37,7 +42,7 @@ diff --git a/redis.conf b/redis.conf
  
  # To enable logging to the system logger, just set 'syslog-enabled' to yes,
  # and optionally update the other syslog parameters to suit your needs.
-@@ -574,7 +576,7 @@
+@@ -607,7 +614,7 @@
  # The Append Only File will also be created inside this directory.
  #
  # Note that you must specify a directory here, not a file name.
@@ -46,20 +51,20 @@ diff --git a/redis.conf b/redis.conf
  
  ################################# REPLICATION #################################
  
-@@ -2747,13 +2749,6 @@
- # Active:       redisbloom redisearch redisjson redistimeseries
+@@ -2912,13 +2919,6 @@
  # Missing .so:  <none>
  # Bad manifest: <none>
--
+ 
 -# >>> BEGIN: loadmodule paths (replaced by make deploy) <<<
 -loadmodule ./modules/redisbloom/redisbloom.so
 -loadmodule ./modules/redisearch/redisearch.so
 -loadmodule ./modules/redisjson/rejson.so
 -loadmodule ./modules/redistimeseries/redistimeseries.so
 -# <<< END: loadmodule paths <<<
- 
+-
  # >>> BEGIN module: redisbloom <<<
  ########################### BLOOM FILTERS CONFIG ##############################
+ 
 diff --git a/sentinel.conf b/sentinel.conf
 --- a/sentinel.conf
 +++ b/sentinel.conf
@@ -90,7 +95,7 @@ diff --git a/sentinel.conf b/sentinel.conf
  
  # sentinel monitor <master-name> <ip> <redis-port> <quorum>
  #
-@@ -359,3 +359,5 @@
+@@ -386,3 +386,5 @@
  # over.
  
  SENTINEL master-reboot-down-after-period mymaster 0

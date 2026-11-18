@@ -102,12 +102,6 @@ and `--setopt=install_weak_deps=False` gives a plain server. Two consequences:
 `Recommends:` on `redis` was chosen over `Supplements: redis` on the modules.
 `valkey-compat-redis` also provides `redis`, and `Supplements:` would match it.
 
-### The `redis-core` name
-
-`redis` provides and obsoletes `redis-core`. That is the name of the server
-package in the Redis packages for other distributions, and in the Copr builds
-that preceded this package, so anything written against it keeps working.
-
 ## How modules activate
 
 `redis-conf.patch` adds one line to `redis.conf`:
@@ -131,6 +125,11 @@ Each module package drops its stub into that directory:
 ```
 
 So installing the package is what enables the modules — no config editing.
+
+The same patch sets `config-rewrite-source-aware yes`. With it, `CONFIG
+REWRITE` leaves settings that come from the included files out of
+`redis.conf`. Without it, a rewrite copies the `loadmodule` lines into
+`redis.conf`. The option exists from Redis 8.12.
 A `redis` install without the module packages leaves that directory empty and the glob
 matches nothing, which Redis handles fine (verified).
 

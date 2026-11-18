@@ -48,6 +48,9 @@ Release:        1%{?dist}
 %global fmt_ver ...    <from step 2, if changed>
 ```
 
+For a pre-release, write the version with a tilde: upstream's `8.12-rc3` is
+`Version: 8.12~rc3`. The spec derives the tarball name from it.
+
 Add a `%changelog` entry. Do not write bare `%{version}` in changelog text —
 rpmlint flags `macro-in-%changelog`; escape as `%%{version}`.
 
