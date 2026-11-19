@@ -6,6 +6,11 @@ name: Build and Test
 # Called by build.yml (pull requests and pushes) and by
 # release_build_and_test.yml (release automation).
 #
+# With copr_project set, the SRPM is then also built in that Copr project and
+# the packages from Copr are smoke-tested. This only happens after every mock
+# build passed, and is skipped when the COPR_CONFIG secret is not available,
+# as in pull requests from forks.
+#
 # The jobs run in a Fedora container on GitHub-hosted runners. mock needs
 # --privileged to set up its chroot, and --isolation=simple because there is
 # no systemd in the container for systemd-nspawn to use.
@@ -21,6 +26,14 @@ on:
         type: string
         description: "JSON array of {chroot, arch, runner}"
         required: true
+      copr_project:
+        type: string
+        description: "Copr project to also build in, after the mock builds passed. Empty means no Copr build."
+        default: ""
+    secrets:
+      COPR_CONFIG:
+        description: "Contents of a ~/.config/copr file. The Copr build is skipped without it."
+        required: false
 
 jobs:
   srpm:
@@ -83,7 +96,7 @@ jobs:
       - name: Install tools
         run: |
           dnf -y --setopt=install_weak_deps=False install \
-            git make mock rpmlint createrepo_c sudo rpm-build
+            git make mock rpmlint createrepo_c sudo rpm-build glibc-langpack-en
           # mock refuses to do the build as root. It wants a user in the mock group.
           useradd -m -G mock builder
 
@@ -135,3 +148,68 @@ jobs:
             results/*.rpm
             !results/*.src.rpm
           retention-days: 90
+
+  copr:
+    name: Build in Copr
+    needs: build
+    if: inputs.copr_project != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    outputs:
+      built: ${{ steps.secret.outputs.available }}
+    steps:
+      - name: Check for the Copr token
+        id: secret
+        env:
+          HAVE_CONFIG: ${{ secrets.COPR_CONFIG != '' }}
+        run: |
+          echo "available=$HAVE_CONFIG" >> "$GITHUB_OUTPUT"
+          if [ "$HAVE_CONFIG" != "true" ]; then
+            echo "::notice::COPR_CONFIG is not available, skipping the Copr build"
+          fi
+
+      - name: Checkout code
+        if: steps.secret.outputs.available == 'true'
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.checkout_ref }}
+
+      - name: Download SRPM
+        if: steps.secret.outputs.available == 'true'
+        uses: actions/download-artifact@v7
+        with:
+          name: srpm
+          path: srpm
+
+      - name: Build in Copr
+        if: steps.secret.outputs.available == 'true'
+        uses: ./.github/actions/copr-build
+        with:
+          copr_project: ${{ inputs.copr_project }}
+          copr_config: ${{ secrets.COPR_CONFIG }}
+
+  copr-smoke-test:
+    name: Smoke test from Copr (${{ matrix.chroot }}-${{ matrix.arch }})
+    needs: copr
+    if: needs.copr.outputs.built == 'true'
+    runs-on: ${{ matrix.runner }}
+    container:
+      image: registry.fedoraproject.org/fedora:45
+      options: --privileged
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(inputs.build_matrix) }}
+    steps:
+      - name: Install tools
+        run: dnf -y --setopt=install_weak_deps=False install git make sudo
+
+      - name: Checkout code
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.checkout_ref }}
+
+      - name: Smoke test from Copr
+        env:
+          COPR_PROJECT: ${{ inputs.copr_project }}
+        run: scripts/smoke-test.sh copr "${{ matrix.chroot }}-${{ matrix.arch }}"

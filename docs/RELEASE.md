@@ -13,6 +13,13 @@ dispatches two workflows and reads one artifact from each.
 `build.yml` runs the same build and tests on pull requests and pushes.
 All three call `build-n-test.yml`.
 
+When the `COPR_PROJECT_STAGING` variable is set, `build.yml` also builds the
+SRPM in that Copr project and smoke-tests the packages from Copr. It does this
+only after every mock build passed, and skips it when the `COPR_CONFIG` secret
+is not available, as in pull requests from forks. Two pull requests that build
+the same version at the same time share that project, so one can end up
+smoke-testing the other's build.
+
 ## Where the builds run
 
 No dedicated machine is needed. The jobs run on GitHub-hosted runners inside
@@ -78,7 +85,7 @@ package.
 | `COPR_CONFIG` | secret | yes | A `~/.config/copr` file from <https://copr.fedorainfracloud.org/api/>, for an account that may build in the project. Copr tokens expire after 180 days |
 | `COPR_CONFIG_STAGING` | secret | no | The same for the staging project. Falls back to `COPR_CONFIG` |
 | `COPR_PROJECT` | variable | no | Copr project for public releases |
-| `COPR_PROJECT_STAGING` | variable | for internal releases | Copr project for internal releases |
+| `COPR_PROJECT_STAGING` | variable | for internal releases and Copr builds in CI | Copr project for internal releases and CI builds, `@redis/redis-ci` |
 | `SLACK_WEB_HOOK_URL` | secret | no | Release notifications |
 
 ## Running a release by hand

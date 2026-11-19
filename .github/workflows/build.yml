@@ -36,3 +36,7 @@ jobs:
     uses: ./.github/workflows/build-n-test.yml
     with:
       build_matrix: ${{ needs.populate-env-vars.outputs.BUILD_MATRIX }}
+      # Test builds go to the staging Copr project, never to the released one.
+      copr_project: ${{ vars.COPR_PROJECT_STAGING }}
+    secrets:
+      COPR_CONFIG: ${{ secrets.COPR_CONFIG }}

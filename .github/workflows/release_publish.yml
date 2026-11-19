@@ -115,63 +115,16 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           path: srpm
 
-      - name: Install copr-cli
-        run: pipx install copr-cli
-
       - name: Build in Copr
         id: copr
-        env:
-          COPR_CONFIG: ${{ inputs.release_type == 'public' && secrets.COPR_CONFIG || (secrets.COPR_CONFIG_STAGING || secrets.COPR_CONFIG) }}
-          COPR_PROJECT: ${{ steps.validate-inputs.outputs.copr_project }}
-        run: |
-          umask 077
-          cfg="$RUNNER_TEMP/copr.conf"
-          printf '%s\n' "$COPR_CONFIG" > "$cfg"
-
-          srpm="$(ls srpm/*.src.rpm)"
-          echo "Submitting $srpm to $COPR_PROJECT"
-          copr-cli --config "$cfg" build --nowait "$COPR_PROJECT" "$srpm" | tee submit.log
-          build_id="$(grep -oE 'Created builds: [0-9]+' submit.log | grep -oE '[0-9]+$')"
-          if [ -z "$build_id" ]; then
-            echo "::error::Could not find the Copr build id in the copr-cli output"
-            exit 1
-          fi
-          build_url="https://copr.fedorainfracloud.org/coprs/build/$build_id/"
-          echo "build_id=$build_id" >> "$GITHUB_OUTPUT"
-          echo "build_url=$build_url" >> "$GITHUB_OUTPUT"
-          echo "Copr build: $build_url" | tee -a "$GITHUB_STEP_SUMMARY"
-
-          # Wait for the build. The exit status is checked per chroot below.
-          copr-cli --config "$cfg" watch-build "$build_id" || true
-          rm -f "$cfg"
-
-      # The overall status is not enough: a build has failed in some chroots
-      # while succeeding in others. Every chroot must have succeeded.
-      - name: Check every chroot
-        id: chroots
-        env:
-          BUILD_ID: ${{ steps.copr.outputs.build_id }}
-        run: |
-          curl -fsS "https://copr.fedorainfracloud.org/api_3/build-chroot/list?build_id=$BUILD_ID" > chroots.json
-          jq -r '.items[] | "\(.name)\t\(.state)"' chroots.json | sort | tee chroots.txt
-          {
-            echo "| Chroot | State |"
-            echo "|---|---|"
-            awk -F'\t' '{print "| " $1 " | " $2 " |"}' chroots.txt
-          } >> "$GITHUB_STEP_SUMMARY"
-          if [ ! -s chroots.txt ]; then
-            echo "::error::Copr returned no chroots for build $BUILD_ID"
-            exit 1
-          fi
-          if awk -F'\t' '$2 != "succeeded"' chroots.txt | grep -q .; then
-            echo "::error::Copr build $BUILD_ID did not succeed in every chroot"
-            exit 1
-          fi
-          echo "chroots_json=$(jq -c '[.items[].name] | sort' chroots.json)" >> "$GITHUB_OUTPUT"
+        uses: ./.github/actions/copr-build
+        with:
+          copr_project: ${{ steps.validate-inputs.outputs.copr_project }}
+          copr_config: ${{ inputs.release_type == 'public' && secrets.COPR_CONFIG || (secrets.COPR_CONFIG_STAGING || secrets.COPR_CONFIG) }}
 
       - name: Create Release info
         env:
-          CHROOTS_JSON: ${{ steps.chroots.outputs.chroots_json }}
+          CHROOTS_JSON: ${{ steps.copr.outputs.chroots_json }}
         run: |
           jq -n \
             --arg release_tag "${{ github.event.inputs.release_tag }}" \
