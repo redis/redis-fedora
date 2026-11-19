@@ -1,0 +1,137 @@
+name: Build and Test
+
+# Reusable workflow: build the source RPM once, then rebuild it with mock in
+# every chroot listed in .github/.env.json, lint the result and smoke-test it.
+#
+# Called by build.yml (pull requests and pushes) and by
+# release_build_and_test.yml (release automation).
+#
+# The jobs run in a Fedora container on GitHub-hosted runners. mock needs
+# --privileged to set up its chroot, and --isolation=simple because there is
+# no systemd in the container for systemd-nspawn to use.
+
+on:
+  workflow_call:
+    inputs:
+      checkout_ref:
+        type: string
+        description: "Ref to build. Empty means the ref that triggered the workflow."
+        default: ""
+      build_matrix:
+        type: string
+        description: "JSON array of {chroot, arch, runner}"
+        required: true
+
+jobs:
+  srpm:
+    name: Build SRPM
+    runs-on: ubuntu-latest
+    container:
+      image: registry.fedoraproject.org/fedora:45
+    outputs:
+      version: ${{ steps.info.outputs.version }}
+      srpm: ${{ steps.info.outputs.srpm }}
+    steps:
+      - name: Install tools
+        run: |
+          dnf -y --setopt=install_weak_deps=False install \
+            git make rpm-build rpmdevtools cargo python3 curl tar gzip
+
+      - name: Checkout code
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.checkout_ref }}
+
+      # Vendors the RedisJSON and RediSearch crates from the release tarball.
+      # This is the only step of the build that needs the network for crates.
+      - name: Generate vendored sources
+        run: make sources
+
+      - name: Build SRPM
+        run: make srpm
+
+      - name: Describe SRPM
+        id: info
+        run: |
+          srpm="$(ls "$(rpm --eval %{_srcrpmdir})"/redis-*.src.rpm)"
+          mkdir -p out && cp "$srpm" out/
+          echo "srpm=$(basename "$srpm")" >> "$GITHUB_OUTPUT"
+          echo "version=$(rpm -qp --qf '%{VERSION}-%{RELEASE}' "$srpm")" >> "$GITHUB_OUTPUT"
+          ls -lh out/
+
+      - name: Upload SRPM
+        uses: actions/upload-artifact@v6
+        with:
+          name: srpm
+          path: out/*.src.rpm
+          retention-days: 90
+
+  build:
+    name: Build and test (${{ matrix.chroot }}-${{ matrix.arch }})
+    needs: srpm
+    runs-on: ${{ matrix.runner }}
+    container:
+      image: registry.fedoraproject.org/fedora:45
+      options: --privileged
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(inputs.build_matrix) }}
+    env:
+      CHROOT: ${{ matrix.chroot }}-${{ matrix.arch }}
+    steps:
+      - name: Install tools
+        run: |
+          dnf -y --setopt=install_weak_deps=False install \
+            git make mock rpmlint createrepo_c sudo rpm-build
+          # mock refuses to do the build as root. It wants a user in the mock group.
+          useradd -m -G mock builder
+
+      - name: Checkout code
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.checkout_ref }}
+
+      - name: Download SRPM
+        uses: actions/download-artifact@v7
+        with:
+          name: srpm
+          path: srpm
+
+      - name: Build with mock
+        run: |
+          mkdir -p results && chown -R builder: results srpm
+          df -h / | tail -1
+          runuser -u builder -- mock -r "$CHROOT" \
+            --isolation=simple --no-bootstrap-image \
+            --resultdir="$PWD/results" \
+            --rebuild srpm/*.src.rpm
+          ls -lh results/*.rpm
+
+      - name: Lint
+        run: make lint MOCK_RESULT="$PWD/results"
+
+      # Building is not verifying: install the packages and exercise the
+      # server and every module.
+      - name: Smoke test
+        run: make smoke-local MOCK_RESULT="$PWD/results"
+
+      - name: Upload build logs
+        if: failure()
+        uses: actions/upload-artifact@v6
+        with:
+          name: logs-${{ matrix.chroot }}-${{ matrix.arch }}
+          path: |
+            results/*.log
+            ~/.cache/redis-smoke/logs/
+          retention-days: 14
+          if-no-files-found: ignore
+
+      - name: Upload RPMs
+        uses: actions/upload-artifact@v6
+        with:
+          name: rpms-${{ matrix.chroot }}-${{ matrix.arch }}
+          path: |
+            results/*.rpm
+            !results/*.src.rpm
+          retention-days: 90
