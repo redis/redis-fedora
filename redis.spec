@@ -42,7 +42,7 @@
 %bcond_with tests
 
 Name:              redis
-Version:           8.12~rc3
+Version:           8.12.0
 # Upstream writes pre-releases as 8.12-rc3.
 %global upstream_ver %(echo %{version} | tr '~' '-')
 Release:           1%{?dist}
@@ -89,10 +89,6 @@ Source13:          %{name}.rpmlintrc
 # of the included module files out of redis.conf.
 # Distribution-specific, not for upstream.
 Patch0:            redis-conf.patch
-# ScalableVectorSearch, bundled by RediSearch, uses std::mutex in a header
-# that does not include <mutex>. GCC 16 no longer provides it through other
-# headers, so the build fails on Fedora 44 and later. For upstream.
-Patch1:            redisearch-svs-mutex.patch
 
 BuildRequires:     gcc
 BuildRequires:     gcc-c++
@@ -547,5 +543,5 @@ install -pDm 0644 macros.redis %{buildroot}%{_rpmmacrodir}/macros.%{name}
 
 
 %changelog
-* Tue Nov 17 2026 Angel Yanev <angel.yanev@redis.com> - 8.12~rc3-1
+* Mon Nov 23 2026 Angel Yanev <angel.yanev@redis.com> - 8.12.0-1
 - Initial package
