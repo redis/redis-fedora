@@ -39,7 +39,8 @@ NOWEAK="--setopt=install_weak_deps=False"
 case "$MODE" in
   copr)
     [ -n "$ARG" ] && CHROOT="$ARG"
-    REPO_URL="https://download.copr.fedorainfracloud.org/results/@redis/redis/${CHROOT}/"
+    # COPR_PROJECT selects another project, for example a staging one.
+    REPO_URL="https://download.copr.fedorainfracloud.org/results/${COPR_PROJECT:-@redis/redis}/${CHROOT}/"
     DNF_REPO="--repofrompath=smoke,$REPO_URL --setopt=smoke.gpgcheck=0"
     echo "==> source: Copr $CHROOT"
     ;;

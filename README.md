@@ -60,6 +60,8 @@ docs/
   BUILDING.md           how the build works, and every offline-build trap
   TESTING.md            what the smoke tests prove, and how to run them
   MAINTENANCE.md        step-by-step version bump procedure
+  RELEASE.md            CI and the release automation workflows
+.github/                workflows and actions for CI and releases
 ```
 
 ## Documentation
@@ -68,6 +70,7 @@ docs/
 - **[docs/BUILDING.md](docs/BUILDING.md)** — build mechanics and offline gotchas
 - **[docs/TESTING.md](docs/TESTING.md)** — how the packages are verified
 - **[docs/MAINTENANCE.md](docs/MAINTENANCE.md)** — bumping to a new Redis release
+- **[docs/RELEASE.md](docs/RELEASE.md)** — CI and the release automation workflows
 - **[AGENTS.md](AGENTS.md)** — guidance for coding agents working on this repo
   (also the place the non-obvious failure modes are written down)
 - **[MAINTAINERS.md](MAINTAINERS.md)** — provenance, ownership, open decisions

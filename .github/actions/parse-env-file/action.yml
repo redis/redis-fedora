@@ -1,0 +1,35 @@
+name: "Parse env file"
+description: "Parses .github/.env.json and returns the build and test matrices"
+
+inputs:
+  env_file_path:
+    description: ".env.json file path"
+    default: '.github/.env.json'
+    required: false
+
+outputs:
+  BUILD_MATRIX:
+    description: "JSON array of {chroot, arch, runner} where build is true (mock builds)"
+    value: ${{ steps.parse.outputs.BUILD_MATRIX }}
+  TEST_MATRIX:
+    description: "JSON array of {chroot, arch, runner} where test is true (smoke tests from Copr)"
+    value: ${{ steps.parse.outputs.TEST_MATRIX }}
+
+runs:
+  using: "composite"
+  steps:
+    - name: Parse env file
+      id: parse
+      shell: bash
+      run: |
+        env_file="${{ inputs.env_file_path }}"
+        if ! jq . "$env_file" >/dev/null; then
+          echo "::error::$env_file is missing or is not valid JSON"
+          exit 1
+        fi
+        BUILD_MATRIX=$(jq -c '[.[] | select(.build == true) | {chroot, arch, runner}]' "$env_file")
+        TEST_MATRIX=$(jq -c '[.[] | select(.test == true) | {chroot, arch, runner}]' "$env_file")
+        echo "BUILD_MATRIX=$BUILD_MATRIX" >> "$GITHUB_OUTPUT"
+        echo "TEST_MATRIX=$TEST_MATRIX" >> "$GITHUB_OUTPUT"
+        echo "BUILD_MATRIX: $BUILD_MATRIX"
+        echo "TEST_MATRIX: $TEST_MATRIX"

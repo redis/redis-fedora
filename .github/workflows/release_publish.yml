@@ -1,0 +1,226 @@
+name: Release Publish
+
+# This workflow is part of the Redis OSS release automation process.
+#
+# It submits the SRPM that Release Build and Test already built and verified
+# to Copr, waits for the build, checks every chroot and then smoke-tests the
+# published packages. Nothing is rebuilt from source here.
+#
+#   release_type=public    Copr project vars.COPR_PROJECT (default @redis/redis)
+#   release_type=internal  Copr project vars.COPR_PROJECT_STAGING
+#
+# Required repository secrets:
+#   COPR_CONFIG            contents of a ~/.config/copr file from
+#                          https://copr.fedorainfracloud.org/api/ for an account
+#                          that may build in the project. Copr tokens expire
+#                          after 180 days.
+#   COPR_CONFIG_STAGING    optional, the same for the staging project.
+#                          Falls back to COPR_CONFIG.
+#   SLACK_WEB_HOOK_URL     optional, release notifications.
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: 'Release tag to publish'
+        required: true
+      release_type:
+        description: 'Type of release to upload (public, internal)'
+        required: true
+      workflow_uuid:
+        description: 'Optional UUID to identify this workflow run'
+        required: false
+      release_handle:
+        description: 'JSON string containing release handle information'
+        required: true
+
+# UUID is used to help automation to identify workflow run in the list of workflow runs.
+run-name: "Release Publish${{ github.event.inputs.workflow_uuid && format(': {0}', github.event.inputs.workflow_uuid) || '' }}"
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    permissions:
+      # to merge changes into the release branch and create the tag
+      contents: write
+      # to download artifacts from the build workflow
+      actions: read
+    outputs:
+      copr_project: ${{ steps.validate-inputs.outputs.copr_project }}
+      env_name: ${{ steps.validate-inputs.outputs.env_name }}
+      build_id: ${{ steps.copr.outputs.build_id }}
+      build_url: ${{ steps.copr.outputs.build_url }}
+      TEST_MATRIX: ${{ steps.parse-env.outputs.TEST_MATRIX }}
+      release_version_branch: ${{ steps.ensure-branch.outputs.release_version_branch }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+
+      - name: Validate inputs
+        id: validate-inputs
+        env:
+          RELEASE_TYPE: ${{ inputs.release_type }}
+          COPR_PROJECT: ${{ vars.COPR_PROJECT || '@redis/redis' }}
+          COPR_PROJECT_STAGING: ${{ vars.COPR_PROJECT_STAGING }}
+          HAVE_CONFIG: ${{ secrets.COPR_CONFIG != '' }}
+          HAVE_CONFIG_STAGING: ${{ secrets.COPR_CONFIG_STAGING != '' || secrets.COPR_CONFIG != '' }}
+        run: |
+          case "$RELEASE_TYPE" in
+            public)
+              copr_project="$COPR_PROJECT"; env_name="production"; have_config="$HAVE_CONFIG" ;;
+            internal)
+              copr_project="$COPR_PROJECT_STAGING"; env_name="staging"; have_config="$HAVE_CONFIG_STAGING" ;;
+            *)
+              echo "::error::Invalid release_type: $RELEASE_TYPE"; exit 1 ;;
+          esac
+          if [ -z "$copr_project" ]; then
+            echo "::error::No Copr project is configured for $RELEASE_TYPE releases. Set the COPR_PROJECT_STAGING repository variable."
+            exit 1
+          fi
+          if [ "$have_config" != "true" ]; then
+            echo "::error::The COPR_CONFIG secret is not set, refuse to proceed"
+            exit 1
+          fi
+          echo "copr_project=$copr_project" >> "$GITHUB_OUTPUT"
+          echo "env_name=$env_name" >> "$GITHUB_OUTPUT"
+          echo "Publishing to Copr project $copr_project ($env_name)"
+
+      # Read the test matrix from the dispatched ref. Ensure Release Branch
+      # below switches the checkout to the version branch.
+      - name: Parse env file
+        id: parse-env
+        uses: ./.github/actions/parse-env-file
+
+      - name: Parse release handle
+        id: parse-handle
+        uses: ./.github/actions/parse-release-handle
+        with:
+          release_handle: ${{ github.event.inputs.release_handle }}
+
+      - name: Ensure Release Branch
+        id: ensure-branch
+        uses: redis-developer/redis-oss-release-automation/.github/actions/ensure-release-branch@main
+        with:
+          release_tag: ${{ github.event.inputs.release_tag }}
+          allow_modify: false
+          gh_token: ${{ secrets.GITHUB_TOKEN }}
+
+      # The SRPM that was built, mock-built and smoke-tested by the build run.
+      - name: Download SRPM
+        uses: actions/download-artifact@v7
+        with:
+          name: srpm
+          run-id: ${{ steps.parse-handle.outputs.run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          path: srpm
+
+      - name: Build in Copr
+        id: copr
+        uses: ./.github/actions/copr-build
+        with:
+          copr_project: ${{ steps.validate-inputs.outputs.copr_project }}
+          copr_config: ${{ inputs.release_type == 'public' && secrets.COPR_CONFIG || (secrets.COPR_CONFIG_STAGING || secrets.COPR_CONFIG) }}
+
+      - name: Create Release info
+        env:
+          CHROOTS_JSON: ${{ steps.copr.outputs.chroots_json }}
+        run: |
+          jq -n \
+            --arg release_tag "${{ github.event.inputs.release_tag }}" \
+            --arg release_type "${{ github.event.inputs.release_type }}" \
+            --arg copr_project "${{ steps.validate-inputs.outputs.copr_project }}" \
+            --arg copr_build_url "${{ steps.copr.outputs.build_url }}" \
+            --argjson copr_build_id "${{ steps.copr.outputs.build_id }}" \
+            --argjson chroots "$CHROOTS_JSON" \
+            '{release_tag: $release_tag, release_type: $release_type, run_id: ${{ github.run_id }},
+              copr_project: $copr_project, copr_build_id: $copr_build_id,
+              copr_build_url: $copr_build_url, chroots: $chroots}' > result.json
+          cat result.json
+
+      - name: Upload publish result artifact
+        uses: actions/upload-artifact@v6
+        with:
+          name: release_info
+          path: result.json
+          retention-days: 90
+
+  # Install the published packages from Copr and exercise every module.
+  smoke-test:
+    name: Smoke test (${{ matrix.chroot }}-${{ matrix.arch }})
+    needs: publish
+    runs-on: ${{ matrix.runner }}
+    container:
+      image: registry.fedoraproject.org/fedora:45
+      options: --privileged
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.publish.outputs.TEST_MATRIX) }}
+    steps:
+      - name: Install tools
+        run: dnf -y --setopt=install_weak_deps=False install git make sudo
+
+      - name: Checkout code
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.publish.outputs.release_version_branch }}
+
+      - name: Smoke test from Copr
+        env:
+          COPR_PROJECT: ${{ needs.publish.outputs.copr_project }}
+        run: scripts/smoke-test.sh copr "${{ matrix.chroot }}-${{ matrix.arch }}"
+
+  # Only a public release that passed its smoke tests is merged and tagged.
+  finalize:
+    needs: [publish, smoke-test]
+    runs-on: ubuntu-latest
+    if: inputs.release_type == 'public'
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+
+      - name: Ensure Release Branch
+        id: ensure-branch
+        uses: redis-developer/redis-oss-release-automation/.github/actions/ensure-release-branch@main
+        with:
+          release_tag: ${{ github.event.inputs.release_tag }}
+          allow_modify: false
+          gh_token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Merge back to release branch
+        id: merge-back
+        uses: redis-developer/redis-oss-release-automation/.github/actions/merge-branches-verified@main
+        with:
+          from_branch: ${{ steps.ensure-branch.outputs.release_version_branch }}
+          to_branch: ${{ steps.ensure-branch.outputs.release_branch }}
+          gh_token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create version tag
+        uses: redis-developer/redis-oss-release-automation/.github/actions/create-tag-verified@main
+        if: steps.merge-back.outputs.merge_commit_sha != ''
+        with:
+          tag: v${{ inputs.release_tag }}
+          ref: ${{ steps.merge-back.outputs.merge_commit_sha }}
+          gh_token: ${{ secrets.GITHUB_TOKEN }}
+
+  slack-notification:
+    needs: [publish, smoke-test, finalize]
+    runs-on: ubuntu-latest
+    if: always()
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+
+      - name: Notify result
+        uses: ./.github/actions/slack-notification
+        with:
+          slack_func: ${{ (needs.publish.result == 'success' && needs.smoke-test.result == 'success' && needs.finalize.result != 'failure') && 'slack_format_success_message' || 'slack_format_failure_message' }}
+          release_tag: ${{ github.event.inputs.release_tag }}
+          env: ${{ inputs.release_type == 'public' && 'production' || 'staging' }}
+          copr_project: ${{ needs.publish.outputs.copr_project }}
+          copr_build_url: ${{ needs.publish.outputs.build_url }}
+          message: ":x: Fedora package publish failed"
+          SLACK_WEB_HOOK_URL: ${{ secrets.SLACK_WEB_HOOK_URL }}

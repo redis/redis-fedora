@@ -1,0 +1,42 @@
+name: Build
+
+# Builds and smoke-tests the packages on pull requests and pushes.
+# The work is done by build-n-test.yml.
+
+on:
+  pull_request:
+    branches:
+      - unstable
+      - release/*
+  push:
+    branches:
+      - unstable
+      - release/*
+  workflow_dispatch:
+
+concurrency:
+  group: build-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  populate-env-vars:
+    runs-on: ubuntu-latest
+    outputs:
+      BUILD_MATRIX: ${{ steps.parse.outputs.BUILD_MATRIX }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+
+      - name: Parse env file
+        id: parse
+        uses: ./.github/actions/parse-env-file
+
+  build-n-test:
+    needs: populate-env-vars
+    uses: ./.github/workflows/build-n-test.yml
+    with:
+      build_matrix: ${{ needs.populate-env-vars.outputs.BUILD_MATRIX }}
+      # Test builds go to the staging Copr project, never to the released one.
+      copr_project: ${{ vars.COPR_PROJECT_STAGING }}
+    secrets:
+      COPR_CONFIG: ${{ secrets.COPR_CONFIG }}

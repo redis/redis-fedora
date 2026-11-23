@@ -1,0 +1,55 @@
+name: "Slack notification"
+description: "Send a Fedora package release Slack notification (does nothing if the webhook is unset)"
+
+inputs:
+  slack_func:
+    description: "slack_format_success_message | slack_format_failure_message"
+    required: true
+  release_tag:
+    description: "Release tag"
+    required: true
+  env:
+    description: "Target environment (production | staging)"
+    required: true
+  copr_project:
+    description: "Copr project the packages were published to"
+    required: false
+    default: ""
+  copr_build_url:
+    description: "URL of the Copr build"
+    required: false
+    default: ""
+  message:
+    description: "Failure message"
+    required: false
+    default: ""
+  SLACK_WEB_HOOK_URL:
+    description: "Slack webhook URL (if empty, this action does nothing)"
+    required: false
+    default: ""
+
+runs:
+  using: "composite"
+  steps:
+    - name: Send Slack notification
+      if: inputs.SLACK_WEB_HOOK_URL != ''
+      shell: bash
+      env:
+        SLACK_FUNC: ${{ inputs.slack_func }}
+        RELEASE_TAG: ${{ inputs.release_tag }}
+        ENV_NAME: ${{ inputs.env }}
+        COPR_PROJECT: ${{ inputs.copr_project }}
+        COPR_BUILD_URL: ${{ inputs.copr_build_url }}
+        MESSAGE: ${{ inputs.message }}
+        SLACK_WEB_HOOK_URL: ${{ inputs.SLACK_WEB_HOOK_URL }}
+      run: |
+        . "${{ github.action_path }}/../common/slack.sh"
+        workflow_url="https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+        footer="Repo: ${{ github.repository }} | Commit: \`${{ github.sha }}\` | <$workflow_url|workflow run>"
+
+        if [ "$SLACK_FUNC" = "slack_format_success_message" ]; then
+          payload="$(slack_format_success_message "${RELEASE_TAG:-unknown}" "$COPR_PROJECT" "$ENV_NAME" "$footer" "$COPR_BUILD_URL")"
+        else
+          payload="$(slack_format_failure_message "${RELEASE_TAG:-unknown}" "${MESSAGE:-:x: Fedora package release failed}" "$ENV_NAME" "$footer")"
+        fi
+        printf '%s' "$payload" | curl -s --fail-with-body -d @- "$SLACK_WEB_HOOK_URL"

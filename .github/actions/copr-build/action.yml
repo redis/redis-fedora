@@ -1,0 +1,90 @@
+name: "Build in Copr"
+description: >
+  Submit an SRPM to a Copr project, wait for the build and require that every
+  chroot succeeded.
+
+inputs:
+  copr_project:
+    description: "Copr project, for example @redis/redis"
+    required: true
+  copr_config:
+    description: "Contents of a ~/.config/copr file"
+    required: true
+  srpm_dir:
+    description: "Directory that holds the one SRPM to submit"
+    required: false
+    default: "srpm"
+
+outputs:
+  build_id:
+    description: "Copr build id"
+    value: ${{ steps.submit.outputs.build_id }}
+  build_url:
+    description: "URL of the Copr build"
+    value: ${{ steps.submit.outputs.build_url }}
+  chroots_json:
+    description: "JSON array of the chroots that were built"
+    value: ${{ steps.chroots.outputs.chroots_json }}
+
+runs:
+  using: "composite"
+  steps:
+    - name: Install copr-cli
+      shell: bash
+      run: pipx install copr-cli
+
+    - name: Submit and wait
+      id: submit
+      shell: bash
+      env:
+        COPR_CONFIG: ${{ inputs.copr_config }}
+        COPR_PROJECT: ${{ inputs.copr_project }}
+        SRPM_DIR: ${{ inputs.srpm_dir }}
+      run: |
+        umask 077
+        cfg="$RUNNER_TEMP/copr.conf"
+        trap 'rm -f "$cfg"' EXIT
+        printf '%s\n' "$COPR_CONFIG" > "$cfg"
+
+        srpm="$(ls "$SRPM_DIR"/*.src.rpm)"
+        echo "Submitting $srpm to $COPR_PROJECT"
+        copr-cli --config "$cfg" build --nowait "$COPR_PROJECT" "$srpm" | tee submit.log
+        build_id="$(grep -oE 'Created builds: [0-9]+' submit.log | grep -oE '[0-9]+$')"
+        if [ -z "$build_id" ]; then
+          echo "::error::Could not find the Copr build id in the copr-cli output"
+          exit 1
+        fi
+        build_url="https://copr.fedorainfracloud.org/coprs/build/$build_id/"
+        echo "build_id=$build_id" >> "$GITHUB_OUTPUT"
+        echo "build_url=$build_url" >> "$GITHUB_OUTPUT"
+        echo "Copr build: $build_url" | tee -a "$GITHUB_STEP_SUMMARY"
+
+        # Wait for the build. The result is checked per chroot in the next step.
+        copr-cli --config "$cfg" watch-build "$build_id" || true
+
+    # The overall status is not enough: a build has failed in some chroots
+    # while succeeding in others. Every chroot must have succeeded.
+    - name: Check every chroot
+      id: chroots
+      shell: bash
+      env:
+        BUILD_ID: ${{ steps.submit.outputs.build_id }}
+      run: |
+        curl -fsS --retry 5 --retry-delay 10 \
+          "https://copr.fedorainfracloud.org/api_3/build-chroot/list?build_id=$BUILD_ID" > chroots.json
+        jq -r '.items[] | "\(.name)\t\(.state)"' chroots.json | sort | tee chroots.txt
+        {
+          echo
+          echo "| Chroot | State |"
+          echo "|---|---|"
+          awk -F'\t' '{print "| " $1 " | " $2 " |"}' chroots.txt
+        } >> "$GITHUB_STEP_SUMMARY"
+        if [ ! -s chroots.txt ]; then
+          echo "::error::Copr returned no chroots for build $BUILD_ID"
+          exit 1
+        fi
+        if awk -F'\t' '$2 != "succeeded"' chroots.txt | grep -q .; then
+          echo "::error::Copr build $BUILD_ID did not succeed in every chroot"
+          exit 1
+        fi
+        echo "chroots_json=$(jq -c '[.items[].name] | sort' chroots.json)" >> "$GITHUB_OUTPUT"
