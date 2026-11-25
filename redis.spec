@@ -365,12 +365,16 @@ EOF
 
 %build
 %global make_flags DEBUG="" V="echo" BUILD_WITH_SYSTEMD=yes BUILD_TLS=yes
+# RedisBloom and RedisTimeSeries build through the readies makefiles, which
+# ignore CFLAGS and LDFLAGS. These two variables give them the Fedora compiler
+# and linker flags, which include LTO.
+%global module_flags CC_FLAGS.opt="%{optflags}" LD_FLAGS.linux="%{build_ldflags}"
 
 export CARGO_NET_OFFLINE=true
 
 # Core and the three modules that build offline through upstream's own
 # `make build`.
-%make_build build redisbloom redisjson redistimeseries %{make_flags} PREFIX=%{_prefix}
+%make_build build redisbloom redisjson redistimeseries %{make_flags} %{module_flags} PREFIX=%{_prefix}
 
 # RediSearch is built with %%cmake because its build.sh does not pass Fedora's
 # linker flags, and rpm then fails with "Missing build-id".

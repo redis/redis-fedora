@@ -130,6 +130,24 @@ upstream's `make build`.
 
 # Other things worth knowing
 
+## 6. `readies` ignores `CFLAGS` and `LDFLAGS`
+
+RedisBloom and RedisTimeSeries build through `readies`. Its makefiles do not
+read `CFLAGS` or `LDFLAGS`, so the two modules do not get the Fedora flags by
+default. They then have no LTO and no hardening flags.
+
+The spec passes two `readies` variables on the make command line:
+
+```
+CC_FLAGS.opt="%{optflags}" LD_FLAGS.linux="%{build_ldflags}"
+```
+
+`CC_FLAGS.opt` replaces the `-O3` that `readies` sets. `readies` adds
+`LD_FLAGS.linux` to the link line. Do not pass `CC_FLAGS`: that replaces the
+include paths and the defines, and the build fails.
+
+RedisJSON is Rust. These variables do not change it.
+
 ## `INLINE_LSE_ATOMICS` and ARM64
 
 RediSearch's CMake defaults `INLINE_LSE_ATOMICS` to `ON`, emitting
