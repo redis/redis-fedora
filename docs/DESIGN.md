@@ -62,31 +62,45 @@ individually removable.
 
 ## The final grouping
 
-Subpackages were initially one per module (`redisbloom`, `redisearch`,
-`redisjson`, `redistimeseries`). That was collapsed: the modules now ship as
-a single package, because the requirement is to install either a plain
-server or a server with everything — not to hand-pick modules.
+`redis` is the server, with one subpackage per module:
 
 ```
 redis.spec
-  |-- redis-core     server, cli, sentinel, vector sets
-  |-- redis-devel    redismodule.h + RPM macros
-  `-- redis          the modules + their loadmodule stubs; requires redis-core
+  |-- redis             server, cli, sentinel, vector sets;
+  |                     recommends the four modules
+  |-- redis-devel       redismodule.h + RPM macros
+  |-- redisbloom        \
+  |-- redisearch         | one module each: the .so and its loadmodule stub;
+  |-- redisjson          | each requires redis
+  `-- redistimeseries   /
 ```
 
-`redis` carries `Obsoletes:` for the short-lived per-module packages
-(8.10.1-3) and for `redis-full`, the name the module package used before the
-8.10.1-8 swap. Upgrading replaces them instead of leaving orphans whose
-`loadmodule` stubs point at deleted `.so` files.
+This is the structure of `valkey` and `valkey-rdma` in Fedora: the main
+package is the server and a module is a subpackage that requires it.
 
-### Why `redis` is the full stack
+Each module package adds its own file to `/etc/redis/modules.conf.d`, the
+directory agreed for all distributions. Removing one module package disables
+that module and leaves the server and the other modules alone.
+
+Each module package has its own `License:` tag and `bundled()` Provides, so
+they describe what that one `.so` contains.
+
+### Why the modules are weak dependencies
 
 `dnf install redis` gives the behaviour most people expect from "install
-Redis" — a working server with the modules upstream ships. Someone who wants
-a bare server asks for `redis-core` explicitly. Before 8.10.1-8 this was
-reversed: `redis` was plain and `redis-full` added modules. The plain
-package was called `redis-server` in Copr builds up to 8.10.3-1; `redis-core` is the name
-agreed across distributions.
+Redis": a working server with the modules upstream ships. `redis` has
+`Recommends:` on each module package, so dnf installs them by default.
+
+Because they are weak, a module can be removed without removing the server,
+and `--setopt=install_weak_deps=False` gives a plain server. Two consequences:
+
+- `dnf install redisjson` on a clean system also installs the other three
+  modules, because `redis` is installed with it and recommends them. Use
+  `--setopt=install_weak_deps=False` to get one module only.
+- An upgrade does not add a module that was removed or never installed.
+
+`Recommends:` on `redis` was chosen over `Supplements: redis` on the modules.
+`valkey-compat-redis` also provides `redis`, and `Supplements:` would match it.
 
 ## How modules activate
 
@@ -96,7 +110,12 @@ agreed across distributions.
 include /etc/redis/modules.conf.d/*.conf
 ```
 
-`redis` drops a stub per module into that directory:
+The same patch removes the four `loadmodule ./modules/...` lines that the
+release tarball's `redis.conf` carries. They point into the source tree, and
+Redis aborts at startup when a `loadmodule` target is missing. If upstream
+changes that block, the patch stops applying and the build fails in `%prep`.
+
+Each module package drops its stub into that directory:
 
 ```
 /etc/redis/modules.conf.d/redisbloom.conf   -> loadmodule /usr/lib64/redis/modules/redisbloom.so
@@ -106,7 +125,12 @@ include /etc/redis/modules.conf.d/*.conf
 ```
 
 So installing the package is what enables the modules — no config editing.
-A plain `redis-core` install leaves that directory empty and the glob
+
+The same patch sets `config-rewrite-source-aware yes`. With it, `CONFIG
+REWRITE` leaves settings that come from the included files out of
+`redis.conf`. Without it, a rewrite copies the `loadmodule` lines into
+`redis.conf`. The option exists from Redis 8.12.
+A `redis` install without the module packages leaves that directory empty and the glob
 matches nothing, which Redis handles fine (verified).
 
 ## Vector sets are not a module
@@ -114,7 +138,7 @@ matches nothing, which Redis handles fine (verified).
 Upstream compiles them into the server binary — `src/Makefile` builds
 `hnsw.o`, `vset.o` and `vset_config.o` under `-DINCLUDE_VEC_SETS=1`. They
 appear in `MODULE LIST` as `vectorset` with no package providing them, and
-`VADD`/`VSIM` work on a plain `redis-core` install. Nothing to package.
+`VADD`/`VSIM` work on `redis` with no module package installed. Nothing to package.
 
 ## The cost of this design
 
@@ -126,9 +150,10 @@ Being honest about the trade-off:
   is not theoretical: during development, core and RedisBloom built fine while
   RedisJSON and RedisTimeSeries failed, and the whole build produced zero
   packages.
-- **Version inflation.** `redis` carries the core version (8.10.1) even
-  though RediSearch upstream is 8.10.0. Actual upstream refs are recorded in
-  the `%global *_ver` macros and stated in the package description.
+- **Version inflation.** Every module package carries the core version, even
+  when the module's own upstream version differs (RedisJSON is 8.10.0 inside
+  Redis 8.10.3). The actual upstream refs are in `modules/modules.yaml`
+  inside the release tarball. The spec does not repeat them.
 
 If independent module hotfixes ever become necessary, the old per-module specs
 remain in git history and a single-module spec can be revived.

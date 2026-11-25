@@ -7,17 +7,18 @@ a reasonable-looking change will silently break the build.
 ## What this repo is
 
 One RPM spec that builds Redis **and every module upstream bundles with it**
-from a single source, producing three packages:
+from a single source, producing these packages:
 
 | Package | Contents |
 |---|---|
-| `redis-core` | plain server; vector sets compiled in; **no modules** |
+| `redis` | the server; vector sets compiled in; recommends the four module packages |
 | `redis-devel` | `redismodule.h` + RPM macros |
-| `redis` | the server plus all four modules (RediSearch, RedisJSON, RedisBloom, RedisTimeSeries) |
+| `redisbloom`, `redisearch`, `redisjson`, `redistimeseries` | one module each: the `.so` and its `loadmodule` stub |
 
-It replaced five separate packaging repos. Do not reintroduce per-module
-packages without reading `docs/DESIGN.md` — the split caused unsatisfiable
-dependencies, blocked co-installation, and two conflicting versioning schemes.
+It replaced five separate packaging repos. The modules are subpackages of
+this one spec. Do not move them back into separate source packages without
+reading `docs/DESIGN.md` — that split caused unsatisfiable dependencies,
+blocked co-installation, and two conflicting versioning schemes.
 
 ## Ground rules
 
@@ -97,24 +98,25 @@ stale pin fails at configure time after most of the build has already run.
 
 ### 6. Module sources re-clone themselves unless stopped
 
-`modules/common.mk` clones a module over the network if `src/.git` is missing,
-and the release tarball has no `.git`. `%prep` touches `src/.prepared` to
-prevent it. Removing those `touch` lines breaks the offline build.
+`modules/common.mk` clones a module over the network unless `src/.prepared`
+exists. The release tarball ships that marker for all four modules, so the
+spec does nothing about it. A tarball made any other way (a git archive, a
+hand-rolled snapshot) lacks the marker and breaks the offline build.
 
 ### 7. Do not declare `%dir` for redis-owned directories
 
-`redis-core` owns `/etc/redis/modules.conf.d` (`0750 redis:root`) and
+`redis` owns `/etc/redis/modules.conf.d` (`0750 redis:root`) and
 `/usr/lib64/redis/modules`. A subpackage re-declaring them with different
-permissions produces a **file conflict that blocks installation**. The `redis`
-package places files into them and owns no directories.
+permissions produces a **file conflict that blocks installation**. The module
+packages place files into them and own no directories.
 
-### 8. Companion libraries are scattered
+### 8. Keep `-DBUILD_SHARED_LIBS=OFF` on the RediSearch build
 
-RediSearch's libraries are not all beside `redisearch.so` — hiredis is in
-`hiredis/`, fmt and spdlog under `_deps/<name>-build/`. `%install` collects
-each from its own location, runs `ldconfig -n` for sonames, then `patchelf
---set-rpath '$ORIGIN'` on the module and VectorSimilarity libs only. Leaf
-libraries must **not** be patchelf'd; it can corrupt simple ELFs.
+`%cmake` passes `-DBUILD_SHARED_LIBS=ON` by default. RediSearch's bundled
+libraries (VectorSimilarity, cpu_features, hiredis, fmt, spdlog) then build as
+separate `.so` files that `redisearch.so` needs at load time, and the package
+has to ship them and fix up RPATHs. Upstream links them statically; the spec
+does the same, so the module directory holds only the four modules.
 
 ### 9. Local mock tests one chroot; that is not enough
 
@@ -152,11 +154,19 @@ make copr          # then check ALL chroots, not just overall status
 make smoke         # runtime assertions
 ```
 
-`make smoke` asserts that a plain `redis-core` install **rejects** `JSON.SET`,
-`BF.ADD`, `TS.ADD` and `FT.CREATE`. Those rejections are the test passing, not
-failing — they prove nothing leaked in through a weak dependency. That bug was
-real: old per-module RPMs carried `Supplements: redis`, so `dnf install redis`
-silently pulled in four unwanted packages.
+The modules are weak dependencies: `redis` has `Recommends:` on each module
+package, the same shape as `valkey` and `valkey-rdma` in Fedora. A default
+`dnf install redis` therefore installs all four. Do not turn them into
+`Requires:`; a module must stay removable.
+
+`make smoke` installs `redis` with `--setopt=install_weak_deps=False` and
+asserts that this plain server **rejects** `JSON.SET`, `BF.ADD`, `TS.ADD` and
+`FT.CREATE`. Those rejections are the test passing, not failing. It then
+installs `redis` normally and asserts that all four modules work.
+
+It also installs `redisjson` with weak dependencies off and asserts that only
+RedisJSON loads. Without the option dnf installs the other modules too,
+because the `redis` package that `redisjson` requires recommends them.
 
 ## Reporting
 
