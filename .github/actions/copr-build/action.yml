@@ -70,8 +70,23 @@ runs:
       env:
         BUILD_ID: ${{ steps.submit.outputs.build_id }}
       run: |
-        curl -fsS --retry 5 --retry-delay 10 \
-          "https://copr.fedorainfracloud.org/api_3/build-chroot/list?build_id=$BUILD_ID" > chroots.json
+        # watch-build stops if it loses the connection to Copr, and the build
+        # can still be in progress. Wait until every chroot has a final state.
+        url="https://copr.fedorainfracloud.org/api_3/build-chroot/list?build_id=$BUILD_ID"
+        deadline=$((SECONDS + 7200))
+        while :; do
+          if curl -fsS --retry 5 --retry-delay 10 --retry-all-errors "$url" > chroots.json \
+            && jq -e '.items | length > 0' chroots.json > /dev/null \
+            && ! jq -r '.items[].state' chroots.json | grep -qxE 'importing|pending|starting|running|waiting'; then
+            break
+          fi
+          if [ "$SECONDS" -ge "$deadline" ]; then
+            echo "::error::Copr build $BUILD_ID has no final state after 120 minutes"
+            exit 1
+          fi
+          echo "Copr build $BUILD_ID is not complete or Copr did not answer. Try again in 60 seconds."
+          sleep 60
+        done
         jq -r '.items[] | "\(.name)\t\(.state)"' chroots.json | sort | tee chroots.txt
         {
           echo
